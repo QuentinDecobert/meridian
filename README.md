@@ -1,5 +1,10 @@
 # Meridian
 
+[![CI](https://github.com/QuentinDecobert/meridian/actions/workflows/ci.yml/badge.svg)](https://github.com/QuentinDecobert/meridian/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](#requirements)
+[![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
+
 A peripheral cockpit for builders working with Claude.
 
 Meridian is a macOS menu bar app that displays your `claude.ai` quota in real time — percent used, time until reset, weekly limits — without breaking your flow.
@@ -95,14 +100,6 @@ make clean      # wipe generated project and build artifacts
 ```
 
 Tests live in `Tests/MeridianTests/` — run them with `xcodebuild test -scheme Meridian` or from Xcode.
-
-## Roadmap
-
-- [ ] Google SSO support (browser cookie import or alternative flow)
-- [ ] Claude server status (fetch the status page)
-- [ ] Claude Code release notes surfaced in the popover
-- [ ] Notarized binary distribution (requires Apple Developer Program)
-- [ ] Localizations (currently English only)
 
 ## Contributing
 
