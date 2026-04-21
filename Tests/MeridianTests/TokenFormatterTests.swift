@@ -46,14 +46,14 @@ final class TokenFormatterTests: XCTestCase {
     }
 }
 
-/// Extra coverage for the Flight Deck duration phrase (`dans 2h14` / `dans 18 min`).
+/// Extra coverage for the Flight Deck duration phrase (`in 2h14` / `in 18 min`).
 final class FlightDeckDurationTests: XCTestCase {
     func testExactHourFormats() {
         let reference = Date(timeIntervalSince1970: 0)
         let reset = reference.addingTimeInterval(2 * 3600 + 14 * 60)
         XCTAssertEqual(
             ResetFormatter.flightDeckDuration(resetsAt: reset, reference: reference),
-            "dans 2h14"
+            "in 2h14"
         )
     }
 
@@ -62,7 +62,7 @@ final class FlightDeckDurationTests: XCTestCase {
         let reset = reference.addingTimeInterval(18 * 60)
         XCTAssertEqual(
             ResetFormatter.flightDeckDuration(resetsAt: reset, reference: reference),
-            "dans 18 min"
+            "in 18 min"
         )
     }
 
@@ -71,16 +71,16 @@ final class FlightDeckDurationTests: XCTestCase {
         let reset = reference.addingTimeInterval(45)
         XCTAssertEqual(
             ResetFormatter.flightDeckDuration(resetsAt: reset, reference: reference),
-            "dans moins d'1 min"
+            "in < 1 min"
         )
     }
 
-    func testInThePastReturnsMaintenant() {
+    func testInThePastReturnsNow() {
         let reference = Date(timeIntervalSince1970: 1_000)
         let reset = Date(timeIntervalSince1970: 500)
         XCTAssertEqual(
             ResetFormatter.flightDeckDuration(resetsAt: reset, reference: reference),
-            "maintenant"
+            "now"
         )
     }
 }

@@ -15,7 +15,7 @@ enum TimeFormatter {
             return String(format: "%dh%02d", hours, minutes % 60)
         }
         let days = hours / 24
-        return "\(days) j"
+        return "\(days) d"
     }
 }
 

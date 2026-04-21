@@ -24,29 +24,29 @@ final class TimeFormatterTests: XCTestCase {
     }
 
     func testDaysBranch() {
-        XCTAssertEqual(TimeFormatter.compact(timeInterval: 24 * 3600), "1 j")
-        XCTAssertEqual(TimeFormatter.compact(timeInterval: 3 * 24 * 3600), "3 j")
+        XCTAssertEqual(TimeFormatter.compact(timeInterval: 24 * 3600), "1 d")
+        XCTAssertEqual(TimeFormatter.compact(timeInterval: 3 * 24 * 3600), "3 d")
     }
 }
 
 final class ResetFormatterTests: XCTestCase {
-    func testPastReturnsMaintenant() {
+    func testPastReturnsNow() {
         let reference = Date(timeIntervalSince1970: 1_000)
         let reset = Date(timeIntervalSince1970: 500)
-        XCTAssertEqual(ResetFormatter.phrase(resetsAt: reset, reference: reference), "maintenant")
+        XCTAssertEqual(ResetFormatter.phrase(resetsAt: reset, reference: reference), "now")
     }
 
     func testUnderTwentyFourHoursReturnsRelative() {
         let reference = Date(timeIntervalSince1970: 0)
         let reset = reference.addingTimeInterval(4 * 3600 + 10 * 60)
-        XCTAssertEqual(ResetFormatter.phrase(resetsAt: reset, reference: reference), "dans 4h10")
+        XCTAssertEqual(ResetFormatter.phrase(resetsAt: reset, reference: reference), "in 4h10")
     }
 
     func testOverTwentyFourHoursReturnsAbsoluteFormat() {
         let reference = Date(timeIntervalSince1970: 0)
         let reset = reference.addingTimeInterval(48 * 3600)
         let phrase = ResetFormatter.phrase(resetsAt: reset, reference: reference)
-        XCTAssertFalse(phrase.hasPrefix("dans "))
+        XCTAssertFalse(phrase.hasPrefix("in "))
         XCTAssertFalse(phrase.isEmpty)
     }
 }
