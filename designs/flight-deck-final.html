@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — Flight Deck · Spec finale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!--
+=====================================================================
+MERIDIAN · FLIGHT DECK · SPEC FINALE · v2 (sans projection)
+=====================================================================
+Décisions de hiérarchie actées avec l'utilisateur :
+
+  1. PAS DE PROJECTION BURN RATE. On reste strictement sur l'état
+     actuel. L'app dit ce qui EST consommé, pas ce qui SERA consommé.
+     On ne promet rien qu'on ne peut pas garantir.
+
+  2. HERO = POURCENTAGE CONSOMMÉ (PAS RESTANT).
+     On parle la même langue que l'utilisateur : "j'ai cramé combien
+     de ma quota ?". Affichage "27%" + "consommé" en sous-titre.
+     Taille display 88px IBM Plex Condensed 700.
+
+  3. STATUT basé uniquement sur la consommation actuelle :
+        0%         →  "Non utilisé"   (neutre · teal calme)
+        1-49%      →  "Serein"        (ivoire · touche d'ambre)
+        50-79%     →  "À surveiller"  (ambre dominant)
+        80-100%    →  "Critique"      (rouge, triangle d'alerte)
+
+     Le verdict est un LABEL (petit, au-dessus du hero), pas une
+     phrase. Pas de "ça passe large" / "ça va serrer" — on laisse
+     le chiffre parler.
+
+  4. RÉPARTITION = TROIS QUOTAS DISTINCTS, VISIBLES PAR DÉFAUT :
+        · Tous les modèles     (quota global — c'est celui du hero)
+        · Sonnet uniquement    (sous-quota dédié Sonnet)
+        · Claude design        (quota de Claude for Figma)
+
+     Trois barres toujours présentes. Chacune a son % et son ratio
+     tokens. L'utilisateur voit d'un coup d'œil où il en est sur
+     chaque dimension — c'est ça qui est actionnable.
+
+  5. RESET = PHRASE SIMPLE au-dessus de l'horizon.
+     "Reset dans 2h14 · 18:30". Pas de timer massif, pas de PDT qui
+     encombre. On montre la durée (actionnable) et l'heure (contexte).
+
+  6. HORIZON MERIDIAN conservé, SIMPLIFIÉ.
+     Plus de marker "FIN" (c'était de la projection). Juste une barre
+     de consommation cumulée + le marker NOW. L'horizon devient une
+     lecture visuelle du "combien de la fenêtre est déjà passée".
+
+RÈGLES UX APPLIQUÉES (via ui-ux-pro-max)
+  · A11y color-not-only : chaque statut a une icône (cercle / triangle
+    / carré plein) ET un mot ET une couleur. Jamais un seul.
+  · A11y contraste : texte principal #F4EDD8 sur #0C1E1C = ~14:1.
+    Texte secondaire rgba(244,237,216,.68) = ~9:1. WCAG AAA.
+  · Tabular-nums partout : pas de layout shift quand les chiffres
+    changent en temps réel (seconde / token).
+  · Hiérarchie : taille + poids, jamais la couleur seule.
+  · Number formatting : "24.3K / 40K" plutôt que "24300 / 40000".
+
+IMPLÉMENTATION SWIFTUI — notes au dev
+  · Hero : Text("27").font(.custom("IBMPlexSansCondensed-Bold",
+    size:88)).monospacedDigit() + "%" plus petit à côté.
+  · Timeline meridian : SwiftUI Canvas — Path linéaire + Circle
+    marker animé avec .animation(.easeInOut, value: nowFraction).
+  · Barres : Rectangle dans GeometryReader. Couleur animée sur
+    changement de state via .animation(.default, value: state).
+  · Statut : enum QuotaStatus { case unused, serene, watch, critical }
+    mappé sur un ViewModifier qui applique accent + icône.
+  · Pas de blur custom : MenuBarExtra(.window) donne le material
+    natif NSVisualEffectView, on superpose juste un overlay
+    linearGradient pour l'ambiance.
+  · Transition numérique : .contentTransition(.numericText()).
+
+=====================================================================
+-->
+
+<style>
+  :root{
+    --page-bg:#08080B;
+    --ink:#F5F5F7;
+    --ink-dim:rgba(245,245,247,.58);
+    --ink-faint:rgba(245,245,247,.30);
+    --hairline:rgba(245,245,247,.08);
+
+    /* Meridian tokens (SwiftUI-friendly) */
+    --m-bg-0:#0A1715;
+    --m-bg-1:#0C1E1C;
+    --m-ink:#F4EDD8;
+    --m-ink-2:rgba(244,237,216,.68);
+    --m-ink-3:rgba(244,237,216,.42);
+    --m-ink-4:rgba(244,237,216,.22);
+    --m-hair:rgba(244,237,216,.10);
+
+    --m-amber:#E8A35C;
+    --m-amber-bg:rgba(232,163,92,.12);
+    --m-amber-line:rgba(232,163,92,.38);
+    --m-red:#F06459;
+    --m-red-bg:rgba(240,100,89,.10);
+    --m-red-line:rgba(240,100,89,.42);
+    --m-green:#7AC99A;
+    --m-green-bg:rgba(122,201,154,.10);
+    --m-mute:rgba(244,237,216,.5);
+
+    --radius-pop:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--page-bg);color:var(--ink);font-family:"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+  /* ---------- Page shell ---------- */
+  .page{max-width:1280px;margin:0 auto;padding:96px 48px 120px}
+  .eyebrow{font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint)}
+  .lede{font:600 40px/1.15 "Inter",sans-serif;letter-spacing:-.02em;margin:20px 0 16px;max-width:900px}
+  .lede em{font-style:normal;color:var(--ink-dim)}
+  .sub{font:400 15px/1.65 "Inter",sans-serif;color:var(--ink-dim);max-width:740px}
+  .sub b{color:var(--ink);font-weight:600}
+  .sub code{font-family:"JetBrains Mono",monospace;font-size:.92em;padding:1px 6px;background:rgba(255,255,255,.04);border-radius:4px;border:1px solid var(--hairline)}
+
+  /* sections */
+  .section{margin-top:80px}
+  .section-head{display:flex;align-items:baseline;justify-content:space-between;gap:24px;margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid var(--hairline)}
+  .section-head h2{font:600 20px/1.2 "Inter",sans-serif;letter-spacing:-.01em}
+  .section-head h2 .num{color:var(--ink-faint);font-variant-numeric:tabular-nums;margin-right:14px;font-weight:500}
+  .section-head .tag{font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);border:1px solid var(--hairline);padding:7px 10px;border-radius:999px}
+  .section-desc{font:400 14px/1.6 "Inter",sans-serif;color:var(--ink-dim);max-width:780px;margin-bottom:26px}
+  .section-desc b{color:var(--ink);font-weight:600}
+
+  /* macOS scene */
+  .scene{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--hairline);box-shadow:0 50px 120px -40px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.02) inset;min-height:560px}
+  .scene::before{content:"";position:absolute;inset:0;z-index:0;background:
+    radial-gradient(90% 60% at 80% 10%, rgba(255,170,90,.22), transparent 60%),
+    radial-gradient(70% 50% at 20% 85%, rgba(255,150,80,.10), transparent 60%),
+    linear-gradient(180deg,#0a1715 0%, #0d1f1d 38%, #1a1b14 72%, #271a10 100%);
+    filter:blur(.3px)}
+  .scene::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(120% 80% at 50% 120%, rgba(0,0,0,.5), transparent 60%)}
+  .scene-inner{position:relative;z-index:2;padding:0 28px 64px}
+
+  .scene.var-watch::before{background:
+    radial-gradient(95% 60% at 80% 10%, rgba(255,150,70,.28), transparent 60%),
+    radial-gradient(70% 50% at 20% 90%, rgba(255,130,60,.14), transparent 60%),
+    linear-gradient(180deg,#0a1715 0%, #0d1f1d 32%, #1f1a10 72%, #2d1a0c 100%)}
+  .scene.var-crit::before{background:
+    radial-gradient(95% 70% at 80% 0%, rgba(255,90,70,.30), transparent 60%),
+    radial-gradient(70% 50% at 20% 90%, rgba(220,90,70,.14), transparent 60%),
+    linear-gradient(180deg,#0c1615 0%, #10201d 32%, #21140e 72%, #2a0f0b 100%)}
+  .scene.var-unused::before{background:
+    radial-gradient(70% 50% at 80% 10%, rgba(180,180,180,.06), transparent 60%),
+    linear-gradient(180deg,#0a1514 0%, #0b1715 50%, #091210 100%)}
+
+  /* macOS menu bar */
+  .menubar{position:relative;z-index:3;display:flex;align-items:center;gap:18px;height:28px;padding:0 14px;background:rgba(20,22,28,.55);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);border-bottom:1px solid rgba(255,255,255,.05);color:rgba(255,255,255,.82);font:500 13px/1 "Inter",-apple-system,sans-serif;margin:0 -28px 0}
+  .menubar .apple{width:16px;height:16px;margin-right:2px}
+  .menubar .app-name{font-weight:600}
+  .menubar .menu-item{color:rgba(255,255,255,.8);font-weight:400}
+  .menubar .spacer{flex:1}
+  .menubar .tray{display:flex;align-items:center;gap:14px}
+  .menubar .tray .icon{display:inline-flex;align-items:center;color:rgba(255,255,255,.9)}
+  .menubar .clock{font-variant-numeric:tabular-nums;font-weight:400;color:rgba(255,255,255,.92)}
+
+  .mb-meridian{position:relative;display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:5px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:.04em;color:rgba(255,255,255,.92);font-variant-numeric:tabular-nums}
+  .mb-meridian.highlight{background:rgba(255,255,255,.08)}
+
+  /* popover stage */
+  .popover-stage{position:relative;z-index:3;margin-top:6px;display:flex;justify-content:flex-end;padding-right:70px}
+  .popover-wrap{position:relative}
+  .popover-wrap .arrow{position:absolute;top:-6px;left:50%;transform:translateX(-50%) rotate(45deg);width:12px;height:12px;background:var(--m-bg-1);border-top:1px solid var(--m-hair);border-left:1px solid var(--m-hair);z-index:1}
+
+  /* =================================================================
+     POPOVER — FLIGHT DECK FINAL v2
+     ================================================================= */
+  .pop{
+    width:360px;border-radius:var(--radius-pop);
+    background:
+      radial-gradient(140% 90% at 100% 0%, rgba(255,180,100,.10), transparent 60%),
+      radial-gradient(140% 90% at 0% 100%, rgba(40,110,110,.14), transparent 55%),
+      linear-gradient(180deg, rgba(12,30,28,.97), rgba(10,23,21,.97));
+    backdrop-filter:blur(40px);
+    -webkit-backdrop-filter:blur(40px);
+    border:1px solid rgba(244,237,216,.08);
+    box-shadow:0 24px 60px -20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.02) inset;
+    color:var(--m-ink);
+    font-family:"Inter",sans-serif;
+    position:relative;
+    overflow:hidden;
+  }
+  .pop.v-watch{
+    background:
+      radial-gradient(140% 90% at 100% 0%, rgba(232,163,92,.20), transparent 60%),
+      radial-gradient(140% 90% at 0% 100%, rgba(40,95,95,.14), transparent 55%),
+      linear-gradient(180deg, rgba(18,28,26,.97), rgba(17,22,18,.97));
+    border-color:rgba(232,163,92,.22)
+  }
+  .pop.v-crit{
+    background:
+      radial-gradient(140% 90% at 100% 0%, rgba(240,100,89,.24), transparent 60%),
+      radial-gradient(140% 90% at 0% 100%, rgba(240,100,89,.08), transparent 55%),
+      linear-gradient(180deg, rgba(22,22,22,.97), rgba(25,15,14,.97));
+    border-color:rgba(240,100,89,.26)
+  }
+  .pop.v-unused{
+    background:linear-gradient(180deg, rgba(11,19,18,.96), rgba(9,15,14,.96));
+  }
+
+  /* corner tick marks */
+  .pop .tl,.pop .tr,.pop .bl,.pop .br{position:absolute;width:12px;height:12px;border-color:var(--m-ink-3);pointer-events:none}
+  .pop .tl{top:10px;left:10px;border-top:1px solid;border-left:1px solid}
+  .pop .tr{top:10px;right:10px;border-top:1px solid;border-right:1px solid}
+  .pop .bl{bottom:10px;left:10px;border-bottom:1px solid;border-left:1px solid}
+  .pop .br{bottom:10px;right:10px;border-bottom:1px solid;border-right:1px solid}
+
+  /* ---------- HEADER ---------- */
+  .pop-hdr{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:18px 24px 6px;
+    font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.22em;color:var(--m-ink-3);
+  }
+  .pop-hdr .brand{display:inline-flex;align-items:center;gap:7px}
+  .pop-hdr .brand .mk{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--m-amber);box-shadow:0 0 8px var(--m-amber)}
+  .pop.v-watch .pop-hdr .brand .mk{background:var(--m-amber);box-shadow:0 0 10px var(--m-amber)}
+  .pop.v-crit .pop-hdr .brand .mk{background:var(--m-red);box-shadow:0 0 10px var(--m-red);animation:pulse 1.4s infinite}
+  .pop.v-unused .pop-hdr .brand .mk{background:var(--m-ink-3);box-shadow:none}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.85)}}
+
+  /* ---------- HERO · % CONSOMMÉ ---------- */
+  .pop-hero{padding:10px 24px 10px}
+  .pop-hero .statut{
+    font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.24em;color:var(--m-ink-3);
+    text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px
+  }
+  .pop-hero .statut .ico{display:inline-flex;align-items:center;justify-content:center}
+  .pop.v-watch .pop-hero .statut{color:var(--m-amber)}
+  .pop.v-crit .pop-hero .statut{color:var(--m-red)}
+  .pop.v-unused .pop-hero .statut{color:var(--m-ink-2)}
+
+  .pop-hero .num{
+    font-family:"IBM Plex Sans Condensed",sans-serif;
+    font-weight:700;font-size:88px;line-height:.92;letter-spacing:-.02em;
+    color:var(--m-ink);
+    font-variant-numeric:tabular-nums;
+    display:flex;align-items:baseline;gap:6px;
+    text-shadow:0 0 30px rgba(255,210,150,.10);
+  }
+  .pop-hero .num .pct{font-size:.36em;font-weight:600;color:var(--m-ink-2);letter-spacing:0;margin-left:-4px;transform:translateY(-28px);font-family:"JetBrains Mono",monospace}
+  .pop.v-watch .pop-hero .num{color:#F5E2C2}
+  .pop.v-crit .pop-hero .num{color:#F6CFC8}
+  .pop.v-unused .pop-hero .num{color:var(--m-ink-2)}
+
+  .pop-hero .lab{
+    font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:.22em;color:var(--m-ink-3);
+    text-transform:uppercase;margin-top:6px
+  }
+
+  /* ---------- RESET LINE ---------- */
+  .pop-reset{
+    padding:8px 24px 12px;margin-top:6px;border-top:1px dashed var(--m-hair);
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    font:500 12px/1.3 "Inter",sans-serif;color:var(--m-ink-2)
+  }
+  .pop-reset .l{color:var(--m-ink-3);font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.2em;text-transform:uppercase}
+  .pop-reset .v{color:var(--m-ink);font:500 13px/1 "Inter",sans-serif;font-variant-numeric:tabular-nums}
+  .pop-reset .v span.abs{color:var(--m-ink-3);font-size:12px;margin-left:6px;font-weight:400}
+
+  /* ---------- HORIZON (meridian line) ---------- */
+  .pop-horizon{padding:4px 24px 14px}
+  .pop-horizon .line{position:relative;height:32px}
+  .pop-horizon .line svg{display:block;width:100%;height:100%;overflow:visible}
+
+  /* ---------- QUOTAS · 3 BARRES ---------- */
+  .pop-quotas{padding:14px 24px 14px;border-top:1px solid var(--m-hair)}
+  .pop-quotas .k{font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.22em;color:var(--m-ink-3);text-transform:uppercase;margin-bottom:12px}
+
+  .pop-quotas .row{margin-top:11px}
+  .pop-quotas .row:first-of-type{margin-top:0}
+  .pop-quotas .row .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+  .pop-quotas .row .top .n{font:500 13px/1.2 "Inter",sans-serif;color:var(--m-ink);letter-spacing:-.005em}
+  .pop-quotas .row .top .n small{color:var(--m-ink-3);font-weight:400;margin-left:6px;font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.08em;font-variant-numeric:tabular-nums}
+  .pop-quotas .row .top .p{font:500 13px/1 "JetBrains Mono",monospace;color:var(--m-ink);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .pop-quotas .row .bar{height:3px;background:rgba(244,237,216,.07);border-radius:2px;overflow:hidden;position:relative}
+  .pop-quotas .row .bar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--m-ink-2),var(--m-ink));border-radius:2px}
+
+  /* state-specific bar color : only applies to the bar whose value justifies the state */
+  .pop-quotas .row.hot .bar i{background:linear-gradient(90deg,var(--m-amber),#F0C48A);box-shadow:0 0 8px rgba(232,163,92,.38)}
+  .pop-quotas .row.hot .top .p{color:var(--m-amber)}
+  .pop-quotas .row.crit .bar i{background:linear-gradient(90deg,var(--m-red),#F58A80);box-shadow:0 0 8px rgba(240,100,89,.42)}
+  .pop-quotas .row.crit .top .p{color:var(--m-red)}
+
+  .pop.v-unused .pop-quotas .row .bar i{background:rgba(244,237,216,.25)}
+
+  /* ---------- FOOTER ---------- */
+  .pop-foot{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:12px 24px 18px;
+    border-top:1px solid var(--m-hair);
+    font:500 10px/1 "JetBrains Mono",monospace;letter-spacing:.2em;color:var(--m-ink-3);
+  }
+  .pop-foot .live{color:#7AC99A;display:inline-flex;align-items:center;gap:6px}
+  .pop-foot .live .blip{display:inline-block;width:5px;height:5px;border-radius:50%;background:#7AC99A;box-shadow:0 0 8px #7AC99A}
+  .pop-foot .live.stale{color:var(--m-ink-3)}
+  .pop-foot .live.stale .blip{background:var(--m-ink-3);box-shadow:none}
+  .pop-foot .settings{color:var(--m-ink-2);cursor:pointer;letter-spacing:.18em}
+
+  /* =================================================================
+     MENU BAR ICON STRIP
+     ================================================================= */
+  .icon-strip{
+    margin-top:56px;border:1px solid var(--hairline);border-radius:14px;padding:32px 32px;
+    background:linear-gradient(180deg,#0B0E12 0%, #0A0A0E 100%);
+    display:grid;grid-template-columns:repeat(4,1fr);gap:14px;
+  }
+  .icon-cell{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px 18px;border:1px solid var(--hairline);border-radius:10px;background:rgba(255,255,255,.015)}
+  .icon-cell .canvas{position:relative;width:100%;height:76px;display:flex;align-items:center;justify-content:center;background:
+    linear-gradient(180deg, rgba(22,22,28,.8), rgba(16,16,22,.8));
+    border:1px solid var(--hairline);border-radius:8px}
+  .icon-cell .actual{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:5px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:.04em;color:rgba(255,255,255,.92);font-variant-numeric:tabular-nums}
+  .icon-cell .caption{font:500 10px/1.3 "JetBrains Mono",monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint)}
+  .icon-cell .name{font:600 13px/1.3 "Inter",sans-serif;color:var(--ink)}
+  .icon-cell .desc{font:400 12px/1.45 "Inter",sans-serif;color:var(--ink-dim)}
+
+  /* ---------- Design notes ---------- */
+  .notes{margin-top:72px;padding-top:28px;border-top:1px solid var(--hairline)}
+  .notes h3{font:600 18px/1.2 "Inter",sans-serif;letter-spacing:-.01em;margin-bottom:18px}
+  .notes ol{list-style:none;counter-reset:n;display:grid;gap:14px}
+  .notes ol li{counter-increment:n;display:grid;grid-template-columns:44px 1fr;gap:14px;font:400 14px/1.6 "Inter",sans-serif;color:var(--ink-dim);max-width:900px}
+  .notes ol li::before{content:counter(n,decimal-leading-zero);font:500 11px/1 "JetBrains Mono",monospace;color:var(--ink-faint);letter-spacing:.18em;padding-top:4px}
+  .notes ol li b{color:var(--ink);font-weight:600}
+
+  footer.page-foot{margin-top:88px;padding-top:24px;border-top:1px solid var(--hairline);display:flex;justify-content:space-between;align-items:center;font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:var(--ink-faint);text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================ INTRO ============================ -->
+  <div class="eyebrow">Meridian · Flight Deck · Spec finale v2 · 21 avr. 2026</div>
+  <h1 class="lede">Ce qui compte, c'est <em>combien tu as déjà consommé</em>. Pas une prédiction, pas un verdict — juste l'état réel, bien montré.</h1>
+  <p class="sub">
+    Direction <b>Flight Deck</b> affinée sur ton retour. On retire toute logique de projection (on ne sait pas anticiper, on ne ment pas).
+    Le <b>% consommé</b> prend le centre. Le statut — <code>Non utilisé</code>, <code>Serein</code>, <code>À surveiller</code>, <code>Critique</code> —
+    se déduit strictement des seuils de conso (&lt;&nbsp;50&nbsp;%, &lt;&nbsp;80&nbsp;%, &lt;&nbsp;100&nbsp;%). Les <b>trois quotas</b> du plan sont visibles
+    en permanence : <i>Tous les modèles</i>, <i>Sonnet uniquement</i>, <i>Claude design</i>.
+  </p>
+
+  <!-- ============================ 01 · SEREIN ============================ -->
+  <section class="section">
+    <div class="section-head">
+      <h2><span class="num">01</span>État · serein</h2>
+      <span class="tag">Conso &lt; 50 % · défaut</span>
+    </div>
+    <p class="section-desc">
+      Milieu de matinée, session en cours depuis une heure. <b>27 %</b> consommés au global, les trois quotas sont tous sous le tiers.
+      Ambiance ivoire sur teal, ambre réservé au marker NOW de l'horizon. Aucun signe de tension.
+    </p>
+
+    <div class="scene">
+      <div class="scene-inner">
+        <div class="menubar">
+          <svg class="apple" viewBox="0 0 14 17" fill="currentColor"><path d="M11.11 9.01c-.02-2.03 1.66-3.01 1.74-3.06-.95-1.38-2.42-1.57-2.95-1.59-1.26-.13-2.45.74-3.09.74-.65 0-1.63-.72-2.68-.7-1.38.02-2.65.8-3.36 2.04-1.43 2.48-.37 6.15 1.03 8.17.68.99 1.49 2.1 2.55 2.06 1.02-.04 1.41-.66 2.65-.66 1.23 0 1.58.66 2.67.64 1.1-.02 1.8-1 2.47-1.99.78-1.14 1.1-2.24 1.12-2.3-.03-.01-2.14-.82-2.15-3.25zM9.14 3.27c.56-.68.94-1.63.84-2.57-.81.03-1.8.54-2.38 1.22-.52.6-.97 1.56-.85 2.49.91.07 1.83-.46 2.39-1.14z"/></svg>
+          <span class="app-name">Xcode</span>
+          <span class="menu-item">File</span><span class="menu-item">Edit</span><span class="menu-item">View</span>
+          <span class="menu-item">Find</span><span class="menu-item">Product</span><span class="menu-item">Debug</span>
+          <span class="spacer"></span>
+          <span class="tray">
+            <span class="icon"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="3" width="13" height="8" rx="1.2"/><path d="M3 7h2M6 7h5"/></svg></span>
+            <!-- MB · serein · arc ivoire + pip ambre -->
+            <span class="mb-meridian highlight" title="Meridian · 27 % consommés">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+                <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".35"/>
+                <path d="M1.5 8 A5.5 5.5 0 0 1 4.6 2.9" stroke="#F4EDD8"/>
+                <circle cx="4.6" cy="2.9" r="1.3" fill="#E8A35C"/>
+              </svg>
+              <span>27% · 2h14</span>
+            </span>
+            <span class="icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7.5 1.5v12M1.5 7.5h12" opacity=".5"/><circle cx="7.5" cy="7.5" r="5.5"/></svg></span>
+            <span class="clock">Mar. 21 avr. 15:46</span>
+          </span>
+        </div>
+
+        <div class="popover-stage">
+          <div class="popover-wrap">
+            <div class="arrow"></div>
+            <div class="pop">
+              <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+
+              <div class="pop-hdr">
+                <span class="brand"><span class="mk"></span>MERIDIAN</span>
+                <span>04.21.26 · 15:46</span>
+              </div>
+
+              <!-- HERO -->
+              <div class="pop-hero">
+                <div class="statut">
+                  <svg class="ico" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.6" fill="none" stroke="#7AC99A" stroke-width="1.2"/><circle cx="5" cy="5" r="1.4" fill="#7AC99A"/></svg>
+                  Statut · serein
+                </div>
+                <div class="num">27<span class="pct">%</span></div>
+                <div class="lab">consommé</div>
+              </div>
+
+              <!-- RESET LINE -->
+              <div class="pop-reset">
+                <span class="l">Reset</span>
+                <span class="v">dans 2h14<span class="abs">· 18:30</span></span>
+              </div>
+
+              <!-- HORIZON · simplifié : barre de conso + marker NOW -->
+              <div class="pop-horizon">
+                <div class="line">
+                  <svg viewBox="0 0 324 32" preserveAspectRatio="none">
+                    <!-- baseline dashed -->
+                    <line x1="2" x2="322" y1="16" y2="16" stroke="rgba(244,237,216,.35)" stroke-width=".8" stroke-dasharray="2 3"/>
+                    <!-- end caps -->
+                    <line x1="2" x2="2" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <line x1="322" x2="322" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <!-- quarter ticks -->
+                    <g stroke="rgba(244,237,216,.22)" stroke-width=".7">
+                      <line x1="82" x2="82" y1="13" y2="19"/>
+                      <line x1="162" x2="162" y1="13" y2="19"/>
+                      <line x1="242" x2="242" y1="13" y2="19"/>
+                    </g>
+                    <!-- consumed band (0 → NOW ~54 % du temps écoulé) -->
+                    <rect x="2" y="15" width="175" height="2" fill="rgba(244,237,216,.55)"/>
+                    <!-- NOW marker -->
+                    <g transform="translate(177 16)">
+                      <polygon points="0,-7 6,0 0,7 -6,0" fill="#E8A35C" stroke="#F6EDD4" stroke-width=".7"/>
+                    </g>
+                    <!-- labels -->
+                    <g font-family="JetBrains Mono" font-size="7.5" fill="rgba(244,237,216,.52)" letter-spacing=".15em">
+                      <text x="2" y="32">LAST · 13:30</text>
+                      <text x="322" y="32" text-anchor="end">RESET · 18:30</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- QUOTAS -->
+              <div class="pop-quotas">
+                <div class="k">Répartition</div>
+                <div class="row">
+                  <div class="top"><div class="n">Tous les modèles <small>24.3K / 90K tok</small></div><div class="p">27%</div></div>
+                  <div class="bar"><i style="width:27%"></i></div>
+                </div>
+                <div class="row">
+                  <div class="top"><div class="n">Sonnet uniquement <small>9.1K / 50K tok</small></div><div class="p">18%</div></div>
+                  <div class="bar"><i style="width:18%"></i></div>
+                </div>
+                <div class="row">
+                  <div class="top"><div class="n">Claude design <small>2.4K / 30K tok</small></div><div class="p">8%</div></div>
+                  <div class="bar"><i style="width:8%"></i></div>
+                </div>
+              </div>
+
+              <div class="pop-foot">
+                <span class="live"><span class="blip"></span>LIVE · PLAN MAX</span>
+                <span class="settings">⌘, RÉGLAGES</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 02 · À SURVEILLER ============================ -->
+  <section class="section">
+    <div class="section-head">
+      <h2><span class="num">02</span>État · à surveiller</h2>
+      <span class="tag">Conso entre 50 % et 80 %</span>
+    </div>
+    <p class="section-desc">
+      Fin d'après-midi, la session pèse. <b>64 %</b> au global, mais <b>Sonnet uniquement est à 72 %</b> — c'est la barre qui chauffe.
+      Teinte ambre dominante, le statut bascule, le pip d'en-tête reste visuellement ambre. L'info n'est pas portée par la couleur seule :
+      le mot <i>à surveiller</i> et un triangle accompagnent toujours l'accent.
+    </p>
+
+    <div class="scene var-watch">
+      <div class="scene-inner">
+        <div class="menubar">
+          <svg class="apple" viewBox="0 0 14 17" fill="currentColor"><path d="M11.11 9.01c-.02-2.03 1.66-3.01 1.74-3.06-.95-1.38-2.42-1.57-2.95-1.59-1.26-.13-2.45.74-3.09.74-.65 0-1.63-.72-2.68-.7-1.38.02-2.65.8-3.36 2.04-1.43 2.48-.37 6.15 1.03 8.17.68.99 1.49 2.1 2.55 2.06 1.02-.04 1.41-.66 2.65-.66 1.23 0 1.58.66 2.67.64 1.1-.02 1.8-1 2.47-1.99.78-1.14 1.1-2.24 1.12-2.3-.03-.01-2.14-.82-2.15-3.25zM9.14 3.27c.56-.68.94-1.63.84-2.57-.81.03-1.8.54-2.38 1.22-.52.6-.97 1.56-.85 2.49.91.07 1.83-.46 2.39-1.14z"/></svg>
+          <span class="app-name">Terminal</span>
+          <span class="menu-item">Shell</span><span class="menu-item">Edit</span><span class="menu-item">View</span>
+          <span class="menu-item">Window</span><span class="menu-item">Help</span>
+          <span class="spacer"></span>
+          <span class="tray">
+            <span class="icon"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="3" width="13" height="8" rx="1.2"/><path d="M3 7h2M6 7h5"/></svg></span>
+            <!-- MB · surveiller · arc + valeur ambre -->
+            <span class="mb-meridian highlight" title="Meridian · 64 % consommés — à surveiller">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+                <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".28"/>
+                <path d="M1.5 8 A5.5 5.5 0 0 1 11.9 5.1" stroke="#E8A35C"/>
+                <circle cx="11.9" cy="5.1" r="1.3" fill="#E8A35C"/>
+              </svg>
+              <span style="color:#E8A35C">64% · 1h02</span>
+            </span>
+            <span class="icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7.5 1.5v12M1.5 7.5h12" opacity=".5"/><circle cx="7.5" cy="7.5" r="5.5"/></svg></span>
+            <span class="clock">Mar. 21 avr. 17:28</span>
+          </span>
+        </div>
+
+        <div class="popover-stage">
+          <div class="popover-wrap">
+            <div class="arrow"></div>
+            <div class="pop v-watch">
+              <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+
+              <div class="pop-hdr">
+                <span class="brand"><span class="mk"></span>MERIDIAN</span>
+                <span>04.21.26 · 17:28</span>
+              </div>
+
+              <div class="pop-hero">
+                <div class="statut">
+                  <svg class="ico" width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 1 L10.5 9 L.5 9 Z" fill="none" stroke="#E8A35C" stroke-width="1.2" stroke-linejoin="miter"/><rect x="5" y="3.8" width="1" height="2.6" fill="#E8A35C"/><rect x="5" y="7.1" width="1" height="1" fill="#E8A35C"/></svg>
+                  Statut · à surveiller
+                </div>
+                <div class="num">64<span class="pct">%</span></div>
+                <div class="lab">consommé</div>
+              </div>
+
+              <div class="pop-reset">
+                <span class="l">Reset</span>
+                <span class="v">dans 1h02<span class="abs">· 18:30</span></span>
+              </div>
+
+              <div class="pop-horizon">
+                <div class="line">
+                  <svg viewBox="0 0 324 32" preserveAspectRatio="none">
+                    <line x1="2" x2="322" y1="16" y2="16" stroke="rgba(244,237,216,.35)" stroke-width=".8" stroke-dasharray="2 3"/>
+                    <line x1="2" x2="2" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <line x1="322" x2="322" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <g stroke="rgba(244,237,216,.22)" stroke-width=".7">
+                      <line x1="82" x2="82" y1="13" y2="19"/>
+                      <line x1="162" x2="162" y1="13" y2="19"/>
+                      <line x1="242" x2="242" y1="13" y2="19"/>
+                    </g>
+                    <!-- NOW ~79 % du temps écoulé (il reste 1h02 sur 5h) -->
+                    <rect x="2" y="15" width="253" height="2" fill="rgba(232,163,92,.62)"/>
+                    <g transform="translate(255 16)">
+                      <polygon points="0,-7 6,0 0,7 -6,0" fill="#E8A35C" stroke="#F6EDD4" stroke-width=".7"/>
+                    </g>
+                    <g font-family="JetBrains Mono" font-size="7.5" fill="rgba(244,237,216,.52)" letter-spacing=".15em">
+                      <text x="2" y="32">LAST · 13:30</text>
+                      <text x="322" y="32" text-anchor="end">RESET · 18:30</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="pop-quotas">
+                <div class="k">Répartition</div>
+                <div class="row">
+                  <div class="top"><div class="n">Tous les modèles <small>57.6K / 90K tok</small></div><div class="p">64%</div></div>
+                  <div class="bar"><i style="width:64%"></i></div>
+                </div>
+                <div class="row hot">
+                  <div class="top"><div class="n">Sonnet uniquement <small>36K / 50K tok</small></div><div class="p">72%</div></div>
+                  <div class="bar"><i style="width:72%"></i></div>
+                </div>
+                <div class="row">
+                  <div class="top"><div class="n">Claude design <small>10.5K / 30K tok</small></div><div class="p">35%</div></div>
+                  <div class="bar"><i style="width:35%"></i></div>
+                </div>
+              </div>
+
+              <div class="pop-foot">
+                <span class="live"><span class="blip"></span>LIVE · PLAN MAX</span>
+                <span class="settings">⌘, RÉGLAGES</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 03 · CRITIQUE ============================ -->
+  <section class="section">
+    <div class="section-head">
+      <h2><span class="num">03</span>État · critique</h2>
+      <span class="tag">Conso ≥ 80 %</span>
+    </div>
+    <p class="section-desc">
+      <b>92 %</b> consommés, reset dans 18 minutes. Accent rouge, carré plein comme icône de statut (différent du triangle : on monte d'un cran de gravité).
+      Le pip d'en-tête pulse doucement — c'est le seul élément animé pour attirer le regard, sans crier.
+      La barre en rouge est celle qui pousse au critique, pas toutes.
+    </p>
+
+    <div class="scene var-crit">
+      <div class="scene-inner">
+        <div class="menubar">
+          <svg class="apple" viewBox="0 0 14 17" fill="currentColor"><path d="M11.11 9.01c-.02-2.03 1.66-3.01 1.74-3.06-.95-1.38-2.42-1.57-2.95-1.59-1.26-.13-2.45.74-3.09.74-.65 0-1.63-.72-2.68-.7-1.38.02-2.65.8-3.36 2.04-1.43 2.48-.37 6.15 1.03 8.17.68.99 1.49 2.1 2.55 2.06 1.02-.04 1.41-.66 2.65-.66 1.23 0 1.58.66 2.67.64 1.1-.02 1.8-1 2.47-1.99.78-1.14 1.1-2.24 1.12-2.3-.03-.01-2.14-.82-2.15-3.25zM9.14 3.27c.56-.68.94-1.63.84-2.57-.81.03-1.8.54-2.38 1.22-.52.6-.97 1.56-.85 2.49.91.07 1.83-.46 2.39-1.14z"/></svg>
+          <span class="app-name">Safari</span>
+          <span class="menu-item">File</span><span class="menu-item">Edit</span><span class="menu-item">View</span>
+          <span class="menu-item">History</span><span class="menu-item">Bookmarks</span>
+          <span class="spacer"></span>
+          <span class="tray">
+            <span class="icon"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="3" width="13" height="8" rx="1.2"/><path d="M3 7h2M6 7h5"/></svg></span>
+            <span class="mb-meridian highlight" title="Meridian · 92 % consommés — critique">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+                <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".25"/>
+                <path d="M1.5 8 A5.5 5.5 0 0 1 12.3 9" stroke="#F06459"/>
+                <circle cx="12.3" cy="9" r="1.3" fill="#F06459"/>
+              </svg>
+              <span style="color:#F06459">92% · 18m</span>
+            </span>
+            <span class="icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7.5 1.5v12M1.5 7.5h12" opacity=".5"/><circle cx="7.5" cy="7.5" r="5.5"/></svg></span>
+            <span class="clock">Mar. 21 avr. 18:12</span>
+          </span>
+        </div>
+
+        <div class="popover-stage">
+          <div class="popover-wrap">
+            <div class="arrow"></div>
+            <div class="pop v-crit">
+              <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+
+              <div class="pop-hdr">
+                <span class="brand"><span class="mk"></span>MERIDIAN</span>
+                <span>04.21.26 · 18:12</span>
+              </div>
+
+              <div class="pop-hero">
+                <div class="statut">
+                  <svg class="ico" width="10" height="10" viewBox="0 0 10 10"><rect x="1.2" y="1.2" width="7.6" height="7.6" fill="#F06459"/></svg>
+                  Statut · critique
+                </div>
+                <div class="num">92<span class="pct">%</span></div>
+                <div class="lab">consommé</div>
+              </div>
+
+              <div class="pop-reset">
+                <span class="l">Reset</span>
+                <span class="v">dans 18 min<span class="abs">· 18:30</span></span>
+              </div>
+
+              <div class="pop-horizon">
+                <div class="line">
+                  <svg viewBox="0 0 324 32" preserveAspectRatio="none">
+                    <line x1="2" x2="322" y1="16" y2="16" stroke="rgba(244,237,216,.35)" stroke-width=".8" stroke-dasharray="2 3"/>
+                    <line x1="2" x2="2" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <line x1="322" x2="322" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <g stroke="rgba(244,237,216,.22)" stroke-width=".7">
+                      <line x1="82" x2="82" y1="13" y2="19"/>
+                      <line x1="162" x2="162" y1="13" y2="19"/>
+                      <line x1="242" x2="242" y1="13" y2="19"/>
+                    </g>
+                    <!-- NOW très proche de la fin -->
+                    <rect x="2" y="15" width="302" height="2" fill="rgba(240,100,89,.65)"/>
+                    <g transform="translate(304 16)">
+                      <polygon points="0,-7 6,0 0,7 -6,0" fill="#F06459" stroke="#F6EDD4" stroke-width=".7"/>
+                    </g>
+                    <g font-family="JetBrains Mono" font-size="7.5" fill="rgba(244,237,216,.52)" letter-spacing=".15em">
+                      <text x="2" y="32">LAST · 13:30</text>
+                      <text x="322" y="32" text-anchor="end">RESET · 18:30</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="pop-quotas">
+                <div class="k">Répartition</div>
+                <div class="row">
+                  <div class="top"><div class="n">Tous les modèles <small>82.8K / 90K tok</small></div><div class="p">92%</div></div>
+                  <div class="bar"><i style="width:92%"></i></div>
+                </div>
+                <div class="row crit">
+                  <div class="top"><div class="n">Sonnet uniquement <small>49K / 50K tok</small></div><div class="p">98%</div></div>
+                  <div class="bar"><i style="width:98%"></i></div>
+                </div>
+                <div class="row hot">
+                  <div class="top"><div class="n">Claude design <small>25.8K / 30K tok</small></div><div class="p">86%</div></div>
+                  <div class="bar"><i style="width:86%"></i></div>
+                </div>
+              </div>
+
+              <div class="pop-foot">
+                <span class="live"><span class="blip"></span>LIVE · PLAN MAX</span>
+                <span class="settings">⌘, RÉGLAGES</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 04 · NON UTILISÉ ============================ -->
+  <section class="section">
+    <div class="section-head">
+      <h2><span class="num">04</span>État · non utilisé</h2>
+      <span class="tag">Conso = 0 % · fenêtre fraîche</span>
+    </div>
+    <p class="section-desc">
+      Juste après un reset ou en début de journée : rien n'a encore été consommé. Hero à <b>0 %</b>, teinte neutre, pas d'accent, pas d'ambre.
+      L'app est présente mais discrète — pas besoin de dire grand-chose quand il n'y a rien à surveiller.
+    </p>
+
+    <div class="scene var-unused">
+      <div class="scene-inner">
+        <div class="menubar">
+          <svg class="apple" viewBox="0 0 14 17" fill="currentColor"><path d="M11.11 9.01c-.02-2.03 1.66-3.01 1.74-3.06-.95-1.38-2.42-1.57-2.95-1.59-1.26-.13-2.45.74-3.09.74-.65 0-1.63-.72-2.68-.7-1.38.02-2.65.8-3.36 2.04-1.43 2.48-.37 6.15 1.03 8.17.68.99 1.49 2.1 2.55 2.06 1.02-.04 1.41-.66 2.65-.66 1.23 0 1.58.66 2.67.64 1.1-.02 1.8-1 2.47-1.99.78-1.14 1.1-2.24 1.12-2.3-.03-.01-2.14-.82-2.15-3.25zM9.14 3.27c.56-.68.94-1.63.84-2.57-.81.03-1.8.54-2.38 1.22-.52.6-.97 1.56-.85 2.49.91.07 1.83-.46 2.39-1.14z"/></svg>
+          <span class="app-name">Finder</span>
+          <span class="menu-item">File</span><span class="menu-item">Edit</span><span class="menu-item">View</span>
+          <span class="menu-item">Go</span><span class="menu-item">Window</span><span class="menu-item">Help</span>
+          <span class="spacer"></span>
+          <span class="tray">
+            <span class="icon"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="3" width="13" height="8" rx="1.2"/><path d="M3 7h2M6 7h5"/></svg></span>
+            <span class="mb-meridian" title="Meridian · 0 % — fenêtre fraîche">
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+                <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".45"/>
+                <circle cx="1.5" cy="8" r="1.2" fill="#F4EDD8" opacity=".85"/>
+              </svg>
+              <span style="opacity:.85">0% · 4h56</span>
+            </span>
+            <span class="icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7.5 1.5v12M1.5 7.5h12" opacity=".5"/><circle cx="7.5" cy="7.5" r="5.5"/></svg></span>
+            <span class="clock">Mar. 21 avr. 13:34</span>
+          </span>
+        </div>
+
+        <div class="popover-stage">
+          <div class="popover-wrap">
+            <div class="arrow"></div>
+            <div class="pop v-unused">
+              <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+
+              <div class="pop-hdr">
+                <span class="brand"><span class="mk"></span>MERIDIAN</span>
+                <span>04.21.26 · 13:34</span>
+              </div>
+
+              <div class="pop-hero">
+                <div class="statut">
+                  <svg class="ico" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.6" fill="none" stroke="rgba(244,237,216,.6)" stroke-width="1.2" stroke-dasharray="1.5 1.5"/></svg>
+                  Statut · non utilisé
+                </div>
+                <div class="num">0<span class="pct">%</span></div>
+                <div class="lab">consommé</div>
+              </div>
+
+              <div class="pop-reset">
+                <span class="l">Reset</span>
+                <span class="v">dans 4h56<span class="abs">· 18:30</span></span>
+              </div>
+
+              <div class="pop-horizon">
+                <div class="line">
+                  <svg viewBox="0 0 324 32" preserveAspectRatio="none">
+                    <line x1="2" x2="322" y1="16" y2="16" stroke="rgba(244,237,216,.35)" stroke-width=".8" stroke-dasharray="2 3"/>
+                    <line x1="2" x2="2" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <line x1="322" x2="322" y1="8" y2="24" stroke="rgba(244,237,216,.45)" stroke-width="1"/>
+                    <g stroke="rgba(244,237,216,.22)" stroke-width=".7">
+                      <line x1="82" x2="82" y1="13" y2="19"/>
+                      <line x1="162" x2="162" y1="13" y2="19"/>
+                      <line x1="242" x2="242" y1="13" y2="19"/>
+                    </g>
+                    <!-- NOW juste au début, pas de bande consommée -->
+                    <g transform="translate(7 16)">
+                      <polygon points="0,-7 6,0 0,7 -6,0" fill="rgba(244,237,216,.6)" stroke="#F6EDD4" stroke-width=".7"/>
+                    </g>
+                    <g font-family="JetBrains Mono" font-size="7.5" fill="rgba(244,237,216,.52)" letter-spacing=".15em">
+                      <text x="2" y="32">LAST · 13:30</text>
+                      <text x="322" y="32" text-anchor="end">RESET · 18:30</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="pop-quotas">
+                <div class="k">Répartition</div>
+                <div class="row">
+                  <div class="top"><div class="n">Tous les modèles <small>0 / 90K tok</small></div><div class="p">0%</div></div>
+                  <div class="bar"><i style="width:0%"></i></div>
+                </div>
+                <div class="row">
+                  <div class="top"><div class="n">Sonnet uniquement <small>0 / 50K tok</small></div><div class="p">0%</div></div>
+                  <div class="bar"><i style="width:0%"></i></div>
+                </div>
+                <div class="row">
+                  <div class="top"><div class="n">Claude design <small>0 / 30K tok</small></div><div class="p">0%</div></div>
+                  <div class="bar"><i style="width:0%"></i></div>
+                </div>
+              </div>
+
+              <div class="pop-foot">
+                <span class="live stale"><span class="blip"></span>IDLE · PLAN MAX</span>
+                <span class="settings">⌘, RÉGLAGES</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ MENU BAR ICON STRIP ============================ -->
+  <section class="section">
+    <div class="section-head">
+      <h2><span class="num">05</span>Icône menu bar · déclinaisons</h2>
+      <span class="tag">Taille réelle · 22 px de hauteur</span>
+    </div>
+    <p class="section-desc">
+      L'icône est accompagnée d'un label texte <code style="font-family:'JetBrains Mono',monospace;font-size:.9em;padding:1px 5px;background:rgba(255,255,255,.04);border-radius:3px">NN% · Hh MM</code>
+      qui porte la même info que le popover en version ultra-condensée. L'arc représente la consommation ; sa couleur <b>suit le statut</b>.
+      L'utilisateur lit l'état sans ouvrir le popover.
+    </p>
+
+    <div class="icon-strip">
+
+      <div class="icon-cell">
+        <div class="canvas">
+          <span class="actual">
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+              <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".45"/>
+              <circle cx="1.5" cy="8" r="1.2" fill="#F4EDD8" opacity=".85"/>
+            </svg>
+            <span style="opacity:.85">0% · 4h56</span>
+          </span>
+        </div>
+        <div class="caption">01 · NON UTILISÉ</div>
+        <div class="name">Fenêtre fraîche</div>
+        <div class="desc">Arc ivoire 45 % opacité. Pip discret à l'origine. Aucun accent coloré.</div>
+      </div>
+
+      <div class="icon-cell">
+        <div class="canvas">
+          <span class="actual">
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+              <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".35"/>
+              <path d="M1.5 8 A5.5 5.5 0 0 1 4.6 2.9" stroke="#F4EDD8"/>
+              <circle cx="4.6" cy="2.9" r="1.3" fill="#E8A35C"/>
+            </svg>
+            <span>27% · 2h14</span>
+          </span>
+        </div>
+        <div class="caption">02 · SEREIN</div>
+        <div class="name">&lt; 50 % consommé</div>
+        <div class="desc">Arc ivoire partiel. Pip ambre comme accent léger — position proportionnelle au % conso.</div>
+      </div>
+
+      <div class="icon-cell">
+        <div class="canvas">
+          <span class="actual">
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+              <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".28"/>
+              <path d="M1.5 8 A5.5 5.5 0 0 1 11.9 5.1" stroke="#E8A35C"/>
+              <circle cx="11.9" cy="5.1" r="1.3" fill="#E8A35C"/>
+            </svg>
+            <span style="color:#E8A35C">64% · 1h02</span>
+          </span>
+        </div>
+        <div class="caption">03 · À SURVEILLER</div>
+        <div class="name">50 – 79 % consommé</div>
+        <div class="desc">Arc bascule en ambre. Le label texte vire aussi — l'utilisateur détecte l'état sans regarder l'icône.</div>
+      </div>
+
+      <div class="icon-cell">
+        <div class="canvas">
+          <span class="actual">
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke-width="1.3" stroke-linecap="round">
+              <path d="M1.5 8 A5.5 5.5 0 0 1 12.5 8" stroke="#F4EDD8" opacity=".25"/>
+              <path d="M1.5 8 A5.5 5.5 0 0 1 12.3 9" stroke="#F06459"/>
+              <circle cx="12.3" cy="9" r="1.3" fill="#F06459"/>
+            </svg>
+            <span style="color:#F06459">92% · 18m</span>
+          </span>
+        </div>
+        <div class="caption">04 · CRITIQUE</div>
+        <div class="name">≥ 80 % consommé</div>
+        <div class="desc">Arc et label en rouge. Pas d'animation dans la menu bar (discrétion macOS). La pulsation est réservée au pip en-tête du popover.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================ DESIGN NOTES ============================ -->
+  <section class="notes">
+    <h3>Notes de design — tradeoffs assumés</h3>
+    <ol>
+      <li><b>Le hero est "% consommé", pas "% restant".</b> C'est la langue de l'utilisateur (« j'ai cramé X % ») et ça aligne le chiffre avec les seuils du statut (&lt; 50 = serein, &lt; 80 = surveiller, etc.). Le chiffre "restant" (73 % dans le proto précédent) est volontairement absent — il est juste 100 − hero.</li>
+      <li><b>Le hero suit le quota "Tous les modèles".</b> C'est la vue agrégée la plus parlante au premier regard. Les sous-quotas (Sonnet, Design) peuvent être plus hauts localement, auquel cas leur barre passe en ambre / rouge pour signaler qu'ils tirent le niveau global. À valider : faut-il que le hero <i>lui-même</i> soit le max des trois quotas au lieu de Tous-les-modèles ? Plus conservateur mais moins intuitif.</li>
+      <li><b>Trois quotas toujours visibles, jamais pliés.</b> L'utilisateur est pro, il veut voir les trois d'un coup. Pas de "voir plus" — ça rajoute un clic pour une info qui tient en trois lignes de 3 px.</li>
+      <li><b>Le statut n'est qu'un label, pas une phrase.</b> "Serein" / "À surveiller" / "Critique" tient en deux mots, se lit en un battement, se traduit trivialement. Une phrase projective (« ça passe large ») serait opinionnée et nécessiterait une logique de projection qu'on s'est interdite.</li>
+      <li><b>Accent porté par la couleur + forme + mot.</b> Cercle = serein, triangle = surveiller, carré plein = critique, cercle dashed = non utilisé. Jamais la couleur seule (WCAG).</li>
+      <li><b>Horizon simplifié.</b> On retire le marker "FIN" (projection). Il reste : bande de conso cumulée + marker NOW + les deux caps LAST / RESET. C'est lisible en un coup d'œil : "où suis-je dans la fenêtre ?".</li>
+      <li><b>Une seule animation : le pip critique.</b> Pulse discret (1.4 s) réservé à l'état <i>Critique</i>, et uniquement sur le pip d'en-tête. La menu bar ne bouge jamais — macOS s'attend à des icônes stables.</li>
+      <li><b>Pas de PDT dans le hero.</b> L'heure absolue de reset apparaît en secondaire (à côté de la durée). La durée <code>dans Xh XX</code> est plus actionnable ; l'heure sert de vérification.</li>
+    </ol>
+  </section>
+
+  <footer class="page-foot">
+    <span>Meridian · Flight Deck · v2 sans projection</span>
+    <span>4 états · 3 quotas · icône 22 px</span>
+  </footer>
+
+</div>
+</body>
+</html>
