@@ -39,5 +39,8 @@ AuthKey_*.p8
 .claude/
 CLAUDE.md
 
+# Internal design references (HTML proto of the Flight Deck) — kept local
+designs/
+
 # Local git backup (safety net during history rewrites)
 .git.backup/
