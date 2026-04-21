@@ -42,5 +42,8 @@ CLAUDE.md
 # Internal design references (HTML proto of the Flight Deck) — kept local
 designs/
 
+# Internal fonts bundle README (outdated, kept local)
+Resources/Fonts/README.md
+
 # Local git backup (safety net during history rewrites)
 .git.backup/
