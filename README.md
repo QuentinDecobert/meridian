@@ -58,6 +58,18 @@ open Meridian.xcodeproj
 - **Click the icon** — popover with the current 5-hour session, three weekly breakdowns (All models, Sonnet only, Claude design) and a link to Settings
 - **Settings** — launch at login, menu bar display (session / weekly), sign out
 
+## API usage tracking
+
+If you also consume the [Anthropic API](https://platform.claude.com) directly (for your own products, Claude Code on an API key, etc.), Meridian can display your month-to-date spend and per-model breakdown in the popover.
+
+- **Opt-in** — paste an **Anthropic Admin Key** (`sk-ant-admin01-…`) in Settings → *Anthropic API*, or during onboarding. Generate one at [console.anthropic.com](https://console.anthropic.com/settings/admin-keys). Stored in the macOS Keychain under a dedicated service, never on disk in plaintext
+- **What you see** — between the subscription breakdown and the footer, a compact `API · <month>` section with `$X.XX` month-to-date + tokens + days until reset. Tap it to expand into a full API Flight Deck with the per-model breakdown (Sonnet / Haiku / Opus …) and a proportional blue bar per row
+- **Polling cadence** — every 15 minutes against the Admin API's `cost_report` + `usage_report/messages` endpoints. Data lags ~5 min, so 15-min ticks are plenty
+- **Cost** — Meridian's Admin API polling doesn't consume inference tokens, so it isn't billed by Anthropic. Verify on your first invoice if you're cautious — the Admin endpoints aren't explicitly tariffed in [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing)
+- **Scope** — the Admin Key is **read-write** on your organisation by design. Meridian only reads, but you're trusting the app with a powerful key. Revoke it at any time from the console; Meridian degrades gracefully (it will show a one-line error and prompt you to re-paste)
+
+API tracking is entirely separate from the subscription path — you can have one, the other, or both.
+
 ## Claude infrastructure status
 
 Meridian keeps an eye on [status.claude.com](https://status.claude.com) so you know when your workflow is impacted by an Anthropic-side issue — not a Meridian bug.
@@ -113,7 +125,8 @@ Sources/
     ├── Quota/    Domain: Quota, UsageWindow, QuotaStore
     ├── MenuBar/  Menu bar label + popover (Flight Deck)
     ├── Settings/ Preferences window
-    └── Onboarding/ claude.ai sign-in flow
+    ├── APIUsage/ Anthropic Admin API client, snapshot, panel
+    └── Onboarding/ claude.ai sign-in + Admin Key flow
 ```
 
 ## Development

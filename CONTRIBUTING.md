@@ -42,8 +42,10 @@ Debug builds expose a **Debug** section in the Settings window (`⌘,`) that let
 
 - **Mock Claude status** picker — cycle through `None (live data)`, `Degraded (API)`, `Partial outage (Code)`, `Major outage (API)`, `Under maintenance (API)`
 - **Force quota fetch error** toggle — combined with `Major outage (API)`, this triggers the full "API is down — that's why" bonus wire (red banner, stale footer)
+- **Mock API usage** picker — force an Anthropic Admin API state without configuring a real key: `None (live data)`, `Idle ($0)`, `Light ($12 · 3 models)`, `Heavy ($147 · 5 models)`, `Error`
+- **Force show API section** toggle — pins a snapshot (defaulting to `Light`) so the mini-section + expanded panel render even when no key is stored. Useful when QA'ing layout across the five states in quick succession
 
-The panel is gated by `#if DEBUG` so it's **entirely stripped from Release builds** (`make build` / `make install`). Contributors validating a PR that touches `StatusChip`, `StatusSection`, the menu bar pip, or any status wiring should use `make run-debug` and walk through the picker.
+The panel is gated by `#if DEBUG` so it's **entirely stripped from Release builds** (`make build` / `make install`). Contributors validating a PR that touches `StatusChip`, `StatusSection`, the menu bar pip, `APIUsageSection` / `APIUsagePanel`, or any status / API wiring should use `make run-debug` and walk through the pickers.
 
 ## Coding conventions
 
