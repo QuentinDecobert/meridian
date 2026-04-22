@@ -62,22 +62,21 @@ struct APIUsagePanel: View {
         VStack(alignment: .leading, spacing: 0) {
             // Big number row + right-aligned MO-TO-DATE caption.
             HStack(alignment: .bottom, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("$")
-                        .font(.custom("JetBrainsMono-SemiBold", size: 32))
-                        .foregroundStyle(MeridianColors.ink2)
-                        .offset(y: -28)
-                    Text(APIUsageFormatters.dollarsNumeric(snapshot.monthToDateUSD))
-                        .font(FlightDeckType.hero)
-                        .foregroundStyle(MeridianColors.ink)
-                        .shadow(color: Color(hex: 0x96B4D2, alpha: 0.12), radius: 12, x: 0, y: 0)
-                        // Never truncate : a user misreading $147 as $14 because
-                        // of a trailing ellipsis is a far worse outcome than a
-                        // slightly smaller hero. Scale down progressively as
-                        // the value grows instead of clipping.
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.45)
-                }
+                // `$` and digits live in a single Text so they scale together
+                // when minimumScaleFactor kicks in on long amounts ($147.30).
+                // An offset `$` would float into the sky as the digits shrink
+                // — scaling as one block keeps the hero visually whole at any
+                // size.
+                Text("$\(APIUsageFormatters.dollarsNumeric(snapshot.monthToDateUSD))")
+                    .font(FlightDeckType.hero)
+                    .foregroundStyle(MeridianColors.ink)
+                    .shadow(color: Color(hex: 0x96B4D2, alpha: 0.12), radius: 12, x: 0, y: 0)
+                    // Never truncate : a user misreading $147 as $14 because
+                    // of a trailing ellipsis is a far worse outcome than a
+                    // slightly smaller hero. Scale down progressively as the
+                    // value grows instead of clipping.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.45)
                 Spacer(minLength: 8)
                 Text("MO-TO-DATE")
                     .font(FlightDeckType.caps10)
