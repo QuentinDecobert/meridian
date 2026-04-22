@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege (MER-SEC-011): default permissions at the repo or org
+# level may grant `contents: write`, which CI doesn't need.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     name: Build & test
@@ -13,8 +18,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # Pin third-party actions by SHA to block a malicious retag of the `v4`
+      # tag pointer (CWE-829, MER-SEC-011). Update via Dependabot
+      # `package-ecosystem: github-actions`.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Show toolchain
         run: |
