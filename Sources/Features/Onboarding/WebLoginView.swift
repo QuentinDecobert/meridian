@@ -8,7 +8,14 @@ struct WebLoginView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
+        // Use an ephemeral data store so cookies, cache, localStorage and
+        // service workers only live in RAM for the lifetime of the WebView.
+        // The login cookie is extracted via `httpCookieStore.getAllCookies`
+        // and handed to `SessionStore` (Keychain) — no reason to leave a
+        // second latent copy of it in `~/Library/WebKit/...` on disk
+        // (MER-SEC-003). As a bonus, `QuotaStore.signOut()` genuinely wipes
+        // the WebView state: no resurrection of a stale cookie on next login.
+        config.websiteDataStore = .nonPersistent()
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
