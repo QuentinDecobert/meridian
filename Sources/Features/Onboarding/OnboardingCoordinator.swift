@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: "com.quentindecobert.meridian", category: "onboarding")
 
 @MainActor
 final class OnboardingCoordinator: ObservableObject {
@@ -46,8 +49,14 @@ final class OnboardingCoordinator: ObservableObject {
             let session = Session(cookie: cookie, organizationUUID: chatOrg.uuid)
             try sessionStore.save(session)
             state = .success
+        } catch let apiError as APIError {
+            // Technical detail stays in the logs; UI gets a redacted message
+            // (MER-SEC-004).
+            logger.error("Onboarding failed: \(String(describing: apiError), privacy: .private)")
+            state = .failure(message: apiError.userFacingMessage)
         } catch {
-            state = .failure(message: "Unable to finalize connection: \(error.localizedDescription)")
+            logger.error("Onboarding failed: \(String(describing: error), privacy: .private)")
+            state = .failure(message: "Unable to finalize connection. Please try again.")
         }
     }
 }

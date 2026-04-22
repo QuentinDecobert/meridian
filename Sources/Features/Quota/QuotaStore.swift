@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: "com.quentindecobert.meridian", category: "quota")
 
 @MainActor
 final class QuotaStore: ObservableObject {
@@ -169,23 +172,22 @@ final class QuotaStore: ObservableObject {
     }
 
     private func errorState(for error: APIError) -> State {
+        // Log the structured error with `privacy: .private` on any
+        // identifier; UI gets a redacted, generic message (MER-SEC-004).
+        logger.error("Quota refresh failed: \(String(describing: error), privacy: .private)")
+
         switch error {
         case .unauthenticated:
             return .signedOut
         case .rateLimited(let retryAfter):
+            // The countdown is a UX affordance, not sensitive info — keep it.
             let delay = retryAfter ?? exponentialBackoff()
             let wait = delay >= 60
                 ? "\(Int(delay / 60)) min"
                 : "\(Int(delay)) s"
             return .error("Too many requests. Retrying in \(wait).")
-        case .serverError(let code):
-            return .error("Server error (\(code)). Try again later.")
-        case .decoding:
-            return .error("Unexpected format — the claude.ai API may have changed.")
-        case .transport(let underlying):
-            return .error("Network issue: \(underlying.localizedDescription)")
-        case .invalidResponse:
-            return .error("Invalid response from claude.ai.")
+        default:
+            return .error(error.userFacingMessage)
         }
     }
 }

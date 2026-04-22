@@ -11,6 +11,28 @@ enum APIError: Error {
     case invalidResponse
     case decoding(any Error)
     case transport(any Error)
+
+    /// Short, redacted, user-facing summary. Never includes the underlying
+    /// error's `localizedDescription`, which can leak URLs (with
+    /// `organization_id`), proxy auth details, or network topology hints
+    /// (MER-SEC-004). Technical detail lives in `os.Logger` under the
+    /// `network` category with `privacy: .private` on any identifier.
+    var userFacingMessage: String {
+        switch self {
+        case .unauthenticated:
+            return "You're signed out. Please sign in again."
+        case .rateLimited:
+            return "Too many requests. Meridian will retry automatically."
+        case .serverError:
+            return "claude.ai returned a server error. Try again later."
+        case .invalidResponse:
+            return "Invalid response from claude.ai."
+        case .decoding:
+            return "Unexpected response format — the claude.ai API may have changed."
+        case .transport:
+            return "Network issue. Check your connection and try again."
+        }
+    }
 }
 
 struct URLSessionAPIClient: APIClient {
