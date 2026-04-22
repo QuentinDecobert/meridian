@@ -56,6 +56,16 @@ make install
 
 On first launch, macOS will block Meridian (unsigned ad-hoc build). In Finder, **right-click** on `Meridian.app` → **Open** → **Open** in the dialog. One-time step.
 
+### With Claude Code
+
+Already using Claude Code in your terminal ? Paste this prompt — it will clone, build, and install Meridian for you, then walk you through the one-time Gatekeeper step :
+
+```text
+Install the Meridian macOS menu bar app from https://github.com/QuentinDecobert/meridian. Clone it to a sensible folder, install xcodegen via Homebrew if it's missing, run `make install`, and at the end remind me about the right-click → Open step I need to do on first launch.
+```
+
+Claude Code will prompt you to confirm each shell command. Same net result as the one-liner, just hands-free.
+
 ### Manual
 
 ```bash
