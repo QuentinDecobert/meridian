@@ -20,9 +20,8 @@ struct OnboardingAdminKeyStep: View {
         VStack(spacing: 24) {
             Spacer()
 
-            MeridianSymbol()
-                .fill(Palette.lume)
-                .frame(width: 48, height: 48)
+            MeridianMark()
+                .frame(width: 56, height: 56)
 
             VStack(spacing: 8) {
                 Text("Track your Anthropic API spend")

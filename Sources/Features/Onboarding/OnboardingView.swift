@@ -76,9 +76,8 @@ struct OnboardingView: View {
 
     private var successLayout: some View {
         VStack(spacing: 16) {
-            MeridianSymbol()
-                .fill(Palette.lume)
-                .frame(width: 48, height: 48)
+            MeridianMark()
+                .frame(width: 56, height: 56)
             Text("Connected")
                 .font(TypeScale.display)
                 .foregroundStyle(SemanticColor.textPrimary)

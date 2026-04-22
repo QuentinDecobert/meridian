@@ -1,0 +1,25 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="0.72" cy="0.22" r="0.7">
+      <stop offset="0%" stop-color="#E8A35C" stop-opacity="0.2"/>
+      <stop offset="70%" stop-color="#E8A35C" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Rounded dark teal tile · matches Meridian's popover background -->
+  <rect width="512" height="512" fill="#0C1E1C" rx="96" ry="96"/>
+  <rect width="512" height="512" fill="url(#glow)" rx="96" ry="96"/>
+
+  <!-- Full arc, faint · the window of the day -->
+  <path d="M 96 340 A 160 160 0 0 1 416 340"
+        fill="none" stroke="#F4EDD8" stroke-opacity="0.28"
+        stroke-width="26" stroke-linecap="round"/>
+
+  <!-- Consumed arc, ~40% · ivory · where you are -->
+  <path d="M 96 340 A 160 160 0 0 1 207 188"
+        fill="none" stroke="#F4EDD8"
+        stroke-width="26" stroke-linecap="round"/>
+
+  <!-- NOW marker · amber pip -->
+  <circle cx="207" cy="188" r="22" fill="#E8A35C"/>
+</svg>
