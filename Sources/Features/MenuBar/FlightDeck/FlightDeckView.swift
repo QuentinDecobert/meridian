@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Meridian Flight Deck popover — final v2 direction.
 ///
@@ -107,6 +108,26 @@ struct FlightDeckView: View {
         return true
     }
 
+    /// Plan label rendered in the footer. When the Admin Key is configured
+    /// we append `+ API` to the snapshot's label so the solo dev always
+    /// sees that both surfaces are being watched.
+    private var footerPlanLabel: String? {
+        guard apiContext != nil else { return nil }
+        return "\(snapshot.planLabel) + API"
+    }
+
+    /// `true` when `apiContext` wants the full API Flight Deck to replace
+    /// the dashboard body. Exclusive with the update panel swap — the
+    /// caller (`PopoverView`) ensures both toggles can't be on at once.
+    private var isShowingAPIDetail: Bool {
+        guard let context = apiContext,
+              context.isShowingDetail,
+              context.snapshot != nil,
+              bonusWireContext == nil,
+              !hasStatusChip else { return false }
+        return true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             FlightDeckHeader(
@@ -114,14 +135,28 @@ struct FlightDeckView: View {
                 reduceMotion: reduceMotion,
                 // When both chips are candidates, the status chip wins the
                 // header slot. The update chip is demoted to the footer.
-                updateContext: hasStatusChip ? nil : updateContext,
-                statusContext: statusContext
+                updateContext: (hasStatusChip || isShowingAPIDetail) ? nil : updateContext,
+                statusContext: statusContext,
+                // A BACK chip replaces the timestamp/update chip when the
+                // API detail panel is open — analogue to the UpdatePanel's
+                // BACK affordance, but hoisted into the header so the user
+                // can see how to leave from the very top.
+                apiBackChip: isShowingAPIDetail ? apiContext?.onToggleDetail : nil
             )
                 .padding(.top, 18)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
 
-            if let context = updateContext, context.isShowingDetail, !hasStatusChip, bonusWireContext == nil {
+            if isShowingAPIDetail, let snapshot = apiContext?.snapshot {
+                APIUsagePanel(
+                    snapshot: snapshot,
+                    onBack: apiContext?.onToggleDetail ?? {}
+                )
+                    .overlay(alignment: .top) {
+                        solidHairline
+                            .padding(.top, 2)
+                    }
+            } else if let context = updateContext, context.isShowingDetail, !hasStatusChip, bonusWireContext == nil {
                 context.panelBuilder()
                     .overlay(alignment: .top) {
                         solidHairline
@@ -142,6 +177,7 @@ struct FlightDeckView: View {
                 // thing that belongs in the footer.
                 demotedUpdateContext: (hasStatusChip && bonusWireContext == nil) ? updateContext : nil,
                 staleContext: bonusWireContext.map { .init(lastRefreshedAt: $0.lastRefreshedAt) },
+                planLabelOverride: footerPlanLabel,
                 onOpenSettings: onOpenSettings
             )
                 .padding(.horizontal, 24)
@@ -398,8 +434,13 @@ private struct FlightDeckHeader: View {
     let reduceMotion: Bool
     let updateContext: FlightDeckView.UpdateContext?
     let statusContext: FlightDeckView.StatusContext?
+    /// When non-nil, the header renders a BACK chip instead of the
+    /// update chip / timestamp. Tap invokes the closure — the caller
+    /// then toggles the API detail off.
+    let apiBackChip: (() -> Void)?
 
     @State private var pulse: Bool = false
+    @State private var isHoveringBack: Bool = false
 
     var body: some View {
         HStack {
@@ -428,11 +469,13 @@ private struct FlightDeckHeader: View {
                     .foregroundStyle(MeridianColors.ink3)
             }
             Spacer()
-            // Priority order: status chip > update chip > timestamp. The
-            // parent view has already nilled out the update context when the
-            // status chip should own the header slot, so a simple cascade is
-            // enough here.
-            if let degraded = degradedComponents {
+            // Priority order: BACK chip (API detail open) > status chip >
+            // update chip > timestamp. The parent view has already nilled
+            // out the update context when the status chip should own the
+            // header slot, so a simple cascade is enough here.
+            if let onBack = apiBackChip {
+                backChip(action: onBack)
+            } else if let degraded = degradedComponents {
                 StatusChip(
                     affectedComponentIDs: degraded.affectedIDs,
                     worstStatus: degraded.worstStatus
@@ -453,6 +496,44 @@ private struct FlightDeckHeader: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Meridian · \(headerDateString)")
+    }
+
+    /// Minimal `BACK` pill — mirrors the proto section 03 expanded card.
+    /// Kept inline here so the whole header stays in one file; if more
+    /// chips land we can extract to a dedicated `NavChip` component.
+    @ViewBuilder
+    private func backChip(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("BACK")
+                    .font(FlightDeckType.caps10)
+                    .tracking(2.0)
+            }
+            .foregroundStyle(isHoveringBack ? MeridianColors.ink : MeridianColors.ink2)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color(hex: 0xF4EDD8, alpha: isHoveringBack ? 0.12 : 0.06))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(MeridianColors.hair, lineWidth: 1)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHoveringBack = $0 }
+        .onChange(of: isHoveringBack) { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .accessibilityLabel("Back to dashboard")
     }
 
     /// The (affected component ids, worst severity) pair used to build the
@@ -750,6 +831,11 @@ private struct FlightDeckFooter: View {
     /// the data on screen is not fresh. Wins priority over the update chip
     /// and over the LIVE/IDLE label.
     var staleContext: StaleContext?
+    /// Override for the right-hand side of the LIVE/IDLE label. Non-nil
+    /// replaces the snapshot's `planLabel` verbatim — the caller uses this
+    /// to produce `MAX + API` when both the subscription and the Admin
+    /// Key are configured. `nil` falls back to `snapshot.planLabel`.
+    var planLabelOverride: String? = nil
     var onOpenSettings: () -> Void
 
     /// Narrow value type local to the footer — the only reason it lives here
@@ -811,7 +897,8 @@ private struct FlightDeckFooter: View {
 
     private var liveLabel: String {
         let prefix = snapshot.isLive ? "LIVE" : "IDLE"
-        return "\(prefix) · \(snapshot.planLabel)"
+        let label = planLabelOverride ?? snapshot.planLabel
+        return "\(prefix) · \(label)"
     }
 }
 
