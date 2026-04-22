@@ -9,6 +9,7 @@ struct MenuBarLabel: View {
     @ObservedObject var quotaStore: QuotaStore
     @ObservedObject var preferences: Preferences
     @ObservedObject var updateChecker: UpdateChecker
+    @ObservedObject var statusChecker: StatusChecker
 
     var body: some View {
         switch quotaStore.state {
@@ -31,6 +32,7 @@ struct MenuBarLabel: View {
         if case .available = updateChecker.status { return true }
         return false
     }
+
 
     // MARK: - Loaded state
 

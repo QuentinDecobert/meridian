@@ -8,18 +8,22 @@ struct MeridianApp: App {
     @StateObject private var quotaStore: QuotaStore
     @StateObject private var preferences: Preferences
     @StateObject private var updateChecker: UpdateChecker
+    @StateObject private var statusChecker: StatusChecker
     private let scheduler: RefreshScheduler
 
     init() {
         let store = QuotaStore()
         let prefs = Preferences()
         let checker = UpdateChecker()
+        let status = StatusChecker()
         _quotaStore = StateObject(wrappedValue: store)
         _preferences = StateObject(wrappedValue: prefs)
         _updateChecker = StateObject(wrappedValue: checker)
+        _statusChecker = StateObject(wrappedValue: status)
         scheduler = RefreshScheduler(quotaStore: store)
         scheduler.start()
         checker.start()
+        status.start()
         launchLogger.info("Meridian launching")
     }
 
@@ -29,11 +33,13 @@ struct MeridianApp: App {
                 .environmentObject(quotaStore)
                 .environmentObject(preferences)
                 .environmentObject(updateChecker)
+                .environmentObject(statusChecker)
         } label: {
             MenuBarLabel(
                 quotaStore: quotaStore,
                 preferences: preferences,
-                updateChecker: updateChecker
+                updateChecker: updateChecker,
+                statusChecker: statusChecker
             )
         }
         .menuBarExtraStyle(.window)

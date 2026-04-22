@@ -22,6 +22,12 @@ struct FlightDeckView: View {
     /// body (hero / reset / horizon / breakdown) is replaced by
     /// `UpdatePanel`. The header and footer never change.
     var updateContext: UpdateContext? = nil
+    /// Optional status context. When present and the status is `.degraded`,
+    /// the header renders a `StatusChip` — which wins priority over the
+    /// update chip (status moves to header, update gets pushed into the
+    /// footer). `.allClear` / `.unknown` behave as if no status context
+    /// were passed.
+    var statusContext: StatusContext? = nil
 
     /// Pulls the live "now" so the header clock and the countdown can update
     /// without spinning up a timer inside the view — the parent is expected
@@ -43,18 +49,37 @@ struct FlightDeckView: View {
         let onToggleDetail: () -> Void
     }
 
+    /// Carrier for the status chip. Kept as a value type so the view stays
+    /// trivially previewable — pass `nil` to match today's layout.
+    struct StatusContext {
+        /// Current `ClaudeStatus` as published by `StatusChecker`. When
+        /// `.allClear` / `.unknown` the chip is not rendered.
+        let status: ClaudeStatus
+    }
+
+    /// `true` when `statusContext` resolves to a degraded state deserving a
+    /// chip — the header prefers this over the update chip, and the update
+    /// chip then gets pushed to the footer.
+    private var hasStatusChip: Bool {
+        guard case .degraded = statusContext?.status else { return false }
+        return true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             FlightDeckHeader(
                 snapshot: snapshot,
                 reduceMotion: reduceMotion,
-                updateContext: updateContext
+                // When both chips are candidates, the status chip wins the
+                // header slot. The update chip is demoted to the footer.
+                updateContext: hasStatusChip ? nil : updateContext,
+                statusContext: statusContext
             )
                 .padding(.top, 18)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
 
-            if let context = updateContext, context.isShowingDetail {
+            if let context = updateContext, context.isShowingDetail, !hasStatusChip {
                 context.panelBuilder()
                     .overlay(alignment: .top) {
                         solidHairline
@@ -64,7 +89,14 @@ struct FlightDeckView: View {
                 dashboardBody
             }
 
-            FlightDeckFooter(snapshot: snapshot, onOpenSettings: onOpenSettings)
+            FlightDeckFooter(
+                snapshot: snapshot,
+                // Demote the update chip into the footer only when the
+                // status chip is holding the header — otherwise keep the
+                // existing behaviour intact.
+                demotedUpdateContext: hasStatusChip ? updateContext : nil,
+                onOpenSettings: onOpenSettings
+            )
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 18)
@@ -114,6 +146,29 @@ struct FlightDeckView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
             .overlay(alignment: .top) { solidHairline }
+
+        // Appears only when the status chip is in the header (= degraded).
+        // We unpack the components/incident here so the view stays cheap to
+        // render in the normal case — no allocation, no branching cost when
+        // status is `.allClear` / `.unknown`.
+        if let statusSection = statusSectionPayload {
+            StatusSection(
+                components: statusSection.components,
+                incident: statusSection.incident
+            )
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .overlay(alignment: .top) { solidHairline }
+        }
+    }
+
+    /// Returns the (components, incident) pair if the status context is
+    /// degraded — otherwise `nil`. Keeping the guard logic here — rather than
+    /// inline in `dashboardBody` — keeps the view body linear and readable.
+    private var statusSectionPayload: (components: [ComponentState], incident: Incident?)? {
+        guard let status = statusContext?.status,
+              case .degraded(let components, let incident) = status else { return nil }
+        return (components, incident)
     }
 
     // MARK: - Ornament hairlines
@@ -244,6 +299,7 @@ private struct FlightDeckHeader: View {
     let snapshot: FlightDeckSnapshot
     let reduceMotion: Bool
     let updateContext: FlightDeckView.UpdateContext?
+    let statusContext: FlightDeckView.StatusContext?
 
     @State private var pulse: Bool = false
 
@@ -274,7 +330,16 @@ private struct FlightDeckHeader: View {
                     .foregroundStyle(MeridianColors.ink3)
             }
             Spacer()
-            if let context = updateContext {
+            // Priority order: status chip > update chip > timestamp. The
+            // parent view has already nilled out the update context when the
+            // status chip should own the header slot, so a simple cascade is
+            // enough here.
+            if let degraded = degradedComponents {
+                StatusChip(
+                    affectedComponentIDs: degraded.affectedIDs,
+                    worstStatus: degraded.worstStatus
+                )
+            } else if let context = updateContext {
                 UpdateChip(
                     title: context.chipTitle,
                     isActive: context.isShowingDetail,
@@ -290,6 +355,19 @@ private struct FlightDeckHeader: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Meridian · \(headerDateString)")
+    }
+
+    /// The (affected component ids, worst severity) pair used to build the
+    /// status chip, or `nil` when no status chip should be shown.
+    private var degradedComponents: (affectedIDs: [String], worstStatus: ComponentStatus)? {
+        guard let status = statusContext?.status,
+              case .degraded(let components, _) = status else { return nil }
+        let affected = components.filter { $0.status.isDegraded }.map(\.id)
+        // Rare edge case : `.degraded` was published but every listed
+        // component is operational. That shouldn't happen but we bail out
+        // rather than render `CLAUDE · OPERATIONAL`.
+        guard !affected.isEmpty else { return nil }
+        return (affected, status.worstStatus)
     }
 
     private var shouldPulse: Bool {
@@ -449,19 +527,33 @@ private struct FlightDeckQuotas: View {
 
 private struct FlightDeckFooter: View {
     let snapshot: FlightDeckSnapshot
+    /// When set, the footer's left slot renders the update chip instead of
+    /// the `LIVE · <plan>` / `IDLE · <plan>` label. Invoked when the status
+    /// chip has taken priority in the header. We never surface both the
+    /// update chip AND the idle/stale label at the same time — the proto
+    /// exchanges one for the other.
+    var demotedUpdateContext: FlightDeckView.UpdateContext?
     var onOpenSettings: () -> Void
 
     var body: some View {
         HStack {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(liveColor)
-                    .frame(width: 5, height: 5)
-                    .shadow(color: liveGlow, radius: 4, x: 0, y: 0)
-                Text(liveLabel)
-                    .font(FlightDeckType.caps10)
-                    .tracking(2.0)
-                    .foregroundStyle(liveColor)
+            if let context = demotedUpdateContext {
+                UpdateChip(
+                    title: context.chipTitle,
+                    isActive: context.isShowingDetail,
+                    onTap: context.onToggleDetail
+                )
+            } else {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(liveColor)
+                        .frame(width: 5, height: 5)
+                        .shadow(color: liveGlow, radius: 4, x: 0, y: 0)
+                    Text(liveLabel)
+                        .font(FlightDeckType.caps10)
+                        .tracking(2.0)
+                        .foregroundStyle(liveColor)
+                }
             }
             Spacer()
             Button(action: onOpenSettings) {
@@ -554,6 +646,50 @@ private struct FlightDeckFooter: View {
             },
             onToggleDetail: {}
         )
+    )
+    .padding(24)
+    .background(Color.black)
+}
+
+#Preview("Flight Deck · Claude API degraded (status chip)") {
+    FlightDeckView(
+        snapshot: .mockSerene,
+        statusContext: .init(status: .degraded(
+            components: [
+                ComponentState(id: ClaudeStatusComponents.claudeAPIID, name: "Claude API", status: .degradedPerformance),
+                ComponentState(id: ClaudeStatusComponents.claudeCodeID, name: "Claude Code", status: .operational),
+            ],
+            incident: nil
+        ))
+    )
+    .padding(24)
+    .background(Color.black)
+}
+
+#Preview("Flight Deck · status + update cohab (footer chip)") {
+    FlightDeckView(
+        snapshot: .mockSerene,
+        updateContext: .init(
+            chipTitle: "V0.2.0 AVAILABLE",
+            isShowingDetail: false,
+            panelBuilder: {
+                UpdatePanel(
+                    localVersion: "0.1.4",
+                    remoteVersion: "0.2.0",
+                    remoteSHA: "abc1234",
+                    aheadCount: 3,
+                    onBack: {}
+                )
+            },
+            onToggleDetail: {}
+        ),
+        statusContext: .init(status: .degraded(
+            components: [
+                ComponentState(id: ClaudeStatusComponents.claudeAPIID, name: "Claude API", status: .operational),
+                ComponentState(id: ClaudeStatusComponents.claudeCodeID, name: "Claude Code", status: .partialOutage),
+            ],
+            incident: nil
+        ))
     )
     .padding(24)
     .background(Color.black)

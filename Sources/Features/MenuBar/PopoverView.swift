@@ -13,6 +13,7 @@ private let popoverLogger = Logger(subsystem: "com.quentindecobert.meridian", ca
 struct PopoverView: View {
     @EnvironmentObject var quotaStore: QuotaStore
     @EnvironmentObject var updateChecker: UpdateChecker
+    @EnvironmentObject var statusChecker: StatusChecker
     @Environment(\.openWindow) private var openWindow
 
     /// Local swap toggle — whether the user is currently looking at the
@@ -52,7 +53,8 @@ struct PopoverView: View {
                         NSApp.activate(ignoringOtherApps: true)
                         openWindow(id: "settings")
                     },
-                    updateContext: updateContext
+                    updateContext: updateContext,
+                    statusContext: statusContext
                 )
             } else {
                 loadingShell
@@ -107,6 +109,16 @@ struct PopoverView: View {
     /// the layout stable if the key is ever missing.
     private var localMarketingVersion: String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "—"
+    }
+
+    // MARK: - Status wiring
+
+    /// Build the status context handed to `FlightDeckView`. Returns `nil`
+    /// when the status is `.allClear` / `.unknown` — the Flight Deck then
+    /// preserves its existing header/footer behaviour.
+    private var statusContext: FlightDeckView.StatusContext? {
+        guard case .degraded = statusChecker.status else { return nil }
+        return FlightDeckView.StatusContext(status: statusChecker.status)
     }
 
     // MARK: - Non-Flight-Deck fallback shells
