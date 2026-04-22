@@ -36,6 +36,7 @@ targets:
         NSHumanReadableCopyright: "© 2026 Quentin Decobert"
         NSHighResolutionCapable: YES
         ATSApplicationFontsPath: "Fonts/"
+        MeridianBuildSHA: ""
     entitlements:
       path: Sources/App/Meridian.entitlements
     settings:
@@ -46,6 +47,25 @@ targets:
         PRODUCT_MODULE_NAME: Meridian
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHighResolutionCapable: YES
+    postCompileScripts:
+      - name: Inject build SHA into Info.plist
+        script: |
+          set -euo pipefail
+          PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          if [ ! -f "$PLIST" ]; then
+            echo "warning: Info.plist not found at $PLIST — skipping SHA injection"
+            exit 0
+          fi
+          SHA=""
+          if command -v git >/dev/null 2>&1; then
+            SHA=$(cd "$SRCROOT" && git rev-parse HEAD 2>/dev/null || true)
+          fi
+          # Empty SHA is a valid sentinel: the runtime checker treats it as
+          # "no SHA available" and simply disables the update check.
+          /usr/libexec/PlistBuddy -c "Set :MeridianBuildSHA $SHA" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :MeridianBuildSHA string $SHA" "$PLIST"
+          echo "MeridianBuildSHA = ${SHA:-<empty>}"
+        basedOnDependencyAnalysis: false
 
   MeridianTests:
     type: bundle.unit-test
