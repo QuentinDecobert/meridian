@@ -17,41 +17,52 @@ import SwiftUI
 struct FlightDeckView: View {
     let snapshot: FlightDeckSnapshot
     var onOpenSettings: () -> Void = {}
+    /// Optional update context. When present the header swaps its timestamp
+    /// for an `UpdateChip`, and when `isShowingDetail` is true the dashboard
+    /// body (hero / reset / horizon / breakdown) is replaced by
+    /// `UpdatePanel`. The header and footer never change.
+    var updateContext: UpdateContext? = nil
 
     /// Pulls the live "now" so the header clock and the countdown can update
     /// without spinning up a timer inside the view — the parent is expected
     /// to flip the snapshot whenever the view should re-render.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Carrier for the chip + panel swap. Kept as a value type inside the
+    /// view so tests and previews can opt out entirely (the default `nil`
+    /// path yields the original dashboard-only layout).
+    struct UpdateContext {
+        /// Version string to display in the chip (`"V0.2.0 AVAILABLE"` or
+        /// `"UPDATE AVAILABLE"` when no remote version is resolvable).
+        let chipTitle: String
+        /// `true` when the update detail panel is replacing the dashboard.
+        let isShowingDetail: Bool
+        /// Build a `UpdatePanel` matching the current update status.
+        let panelBuilder: () -> UpdatePanel
+        /// Chip tap handler.
+        let onToggleDetail: () -> Void
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FlightDeckHeader(snapshot: snapshot, reduceMotion: reduceMotion)
+            FlightDeckHeader(
+                snapshot: snapshot,
+                reduceMotion: reduceMotion,
+                updateContext: updateContext
+            )
                 .padding(.top, 18)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
 
-            FlightDeckHero(snapshot: snapshot)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 10)
-
-            FlightDeckResetLine(snapshot: snapshot)
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-                .overlay(alignment: .top) {
-                    dashedHairline
-                        .padding(.top, 2)
-                }
-
-            HorizonView(snapshot: snapshot)
-                .padding(.horizontal, 24)
-                .padding(.top, 4)
-                .padding(.bottom, 14)
-
-            FlightDeckQuotas(snapshot: snapshot)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-                .overlay(alignment: .top) { solidHairline }
+            if let context = updateContext, context.isShowingDetail {
+                context.panelBuilder()
+                    .overlay(alignment: .top) {
+                        solidHairline
+                            .padding(.top, 2)
+                    }
+            } else {
+                dashboardBody
+            }
 
             FlightDeckFooter(snapshot: snapshot, onOpenSettings: onOpenSettings)
                 .padding(.horizontal, 24)
@@ -73,6 +84,36 @@ struct FlightDeckView: View {
         .shadow(color: .black.opacity(0.45), radius: 30, x: 0, y: 14)
         .animation(.easeInOut(duration: 0.35), value: snapshot.heroStatus)
         .accessibilityElement(children: .contain)
+    }
+
+    // MARK: - Dashboard body (hero / reset / horizon / breakdown)
+
+    /// The five dashboard rows — extracted so the update panel can replace
+    /// them cleanly while the header + footer stay put.
+    @ViewBuilder
+    private var dashboardBody: some View {
+        FlightDeckHero(snapshot: snapshot)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+
+        FlightDeckResetLine(snapshot: snapshot)
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+            .overlay(alignment: .top) {
+                dashedHairline
+                    .padding(.top, 2)
+            }
+
+        HorizonView(snapshot: snapshot)
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 14)
+
+        FlightDeckQuotas(snapshot: snapshot)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .overlay(alignment: .top) { solidHairline }
     }
 
     // MARK: - Ornament hairlines
@@ -202,6 +243,7 @@ struct FlightDeckView: View {
 private struct FlightDeckHeader: View {
     let snapshot: FlightDeckSnapshot
     let reduceMotion: Bool
+    let updateContext: FlightDeckView.UpdateContext?
 
     @State private var pulse: Bool = false
 
@@ -232,13 +274,21 @@ private struct FlightDeckHeader: View {
                     .foregroundStyle(MeridianColors.ink3)
             }
             Spacer()
-            Text(headerDateString)
-                .font(FlightDeckType.caps10)
-                .tracking(2.2)
-                .monospacedDigit()
-                .foregroundStyle(MeridianColors.ink3)
+            if let context = updateContext {
+                UpdateChip(
+                    title: context.chipTitle,
+                    isActive: context.isShowingDetail,
+                    onTap: context.onToggleDetail
+                )
+            } else {
+                Text(headerDateString)
+                    .font(FlightDeckType.caps10)
+                    .tracking(2.2)
+                    .monospacedDigit()
+                    .foregroundStyle(MeridianColors.ink3)
+            }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Meridian · \(headerDateString)")
     }
 
@@ -463,4 +513,48 @@ private struct FlightDeckFooter: View {
     FlightDeckView(snapshot: .mockUnused)
         .padding(24)
         .background(Color.black)
+}
+
+#Preview("Flight Deck · Update available (chip)") {
+    FlightDeckView(
+        snapshot: .mockSerene,
+        updateContext: .init(
+            chipTitle: "V0.2.0 AVAILABLE",
+            isShowingDetail: false,
+            panelBuilder: {
+                UpdatePanel(
+                    localVersion: "0.1.4",
+                    remoteVersion: "0.2.0",
+                    remoteSHA: "abc1234",
+                    aheadCount: 3,
+                    onBack: {}
+                )
+            },
+            onToggleDetail: {}
+        )
+    )
+    .padding(24)
+    .background(Color.black)
+}
+
+#Preview("Flight Deck · Update available (detail)") {
+    FlightDeckView(
+        snapshot: .mockSerene,
+        updateContext: .init(
+            chipTitle: "V0.2.0 AVAILABLE",
+            isShowingDetail: true,
+            panelBuilder: {
+                UpdatePanel(
+                    localVersion: "0.1.4",
+                    remoteVersion: "0.2.0",
+                    remoteSHA: "abc1234",
+                    aheadCount: 3,
+                    onBack: {}
+                )
+            },
+            onToggleDetail: {}
+        )
+    )
+    .padding(24)
+    .background(Color.black)
 }

@@ -12,12 +12,25 @@ private let popoverLogger = Logger(subsystem: "com.quentindecobert.meridian", ca
 /// job is state dispatch + non-loaded fallbacks.
 struct PopoverView: View {
     @EnvironmentObject var quotaStore: QuotaStore
+    @EnvironmentObject var updateChecker: UpdateChecker
     @Environment(\.openWindow) private var openWindow
+
+    /// Local swap toggle — whether the user is currently looking at the
+    /// update detail panel or the dashboard. Not persisted: reopening the
+    /// popover always lands on the dashboard, per the interaction spec.
+    @State private var isShowingUpdateDetail: Bool = false
 
     var body: some View {
         content
             .onAppear {
                 Task { await quotaStore.refreshIfNeeded() }
+            }
+            .onChange(of: isAvailable) { newValue in
+                // If the update status flips away from .available while the
+                // user is still on the detail panel (e.g. they just ran the
+                // install and the next check matches), return to the
+                // dashboard silently.
+                if !newValue { isShowingUpdateDetail = false }
             }
     }
 
@@ -32,11 +45,15 @@ struct PopoverView: View {
                 now: .now,
                 isLive: !quotaStore.hasTransientError
             ) {
-                FlightDeckView(snapshot: snapshot) {
-                    popoverLogger.info("Preferences opened from popover")
-                    NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: "settings")
-                }
+                FlightDeckView(
+                    snapshot: snapshot,
+                    onOpenSettings: {
+                        popoverLogger.info("Preferences opened from popover")
+                        NSApp.activate(ignoringOtherApps: true)
+                        openWindow(id: "settings")
+                    },
+                    updateContext: updateContext
+                )
             } else {
                 loadingShell
             }
@@ -45,6 +62,51 @@ struct PopoverView: View {
         case .signedOut:
             signedOutShell
         }
+    }
+
+    // MARK: - Update wiring
+
+    /// `true` iff the checker currently has an `.available(...)` status.
+    private var isAvailable: Bool {
+        if case .available = updateChecker.status { return true }
+        return false
+    }
+
+    /// Build the update context handed to `FlightDeckView`. Returns `nil`
+    /// when no update is available — the Flight Deck then renders the
+    /// normal timestamped header.
+    private var updateContext: FlightDeckView.UpdateContext? {
+        guard case .available(let remoteSHA, let ahead, let remoteVersion) = updateChecker.status else {
+            return nil
+        }
+        let local = localMarketingVersion
+        return FlightDeckView.UpdateContext(
+            chipTitle: chipTitle(remoteVersion: remoteVersion),
+            isShowingDetail: isShowingUpdateDetail,
+            panelBuilder: {
+                UpdatePanel(
+                    localVersion: local,
+                    remoteVersion: remoteVersion,
+                    remoteSHA: remoteSHA,
+                    aheadCount: ahead,
+                    onBack: { self.isShowingUpdateDetail = false }
+                )
+            },
+            onToggleDetail: { isShowingUpdateDetail.toggle() }
+        )
+    }
+
+    /// `V0.2.0 AVAILABLE` when a version string is known, otherwise just
+    /// `UPDATE AVAILABLE` — never ship a meaningless placeholder.
+    private func chipTitle(remoteVersion: String?) -> String {
+        if let remoteVersion { return "V\(remoteVersion) AVAILABLE" }
+        return "UPDATE AVAILABLE"
+    }
+
+    /// `CFBundleShortVersionString` — local app version. Fallback `—` keeps
+    /// the layout stable if the key is ever missing.
+    private var localMarketingVersion: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "—"
     }
 
     // MARK: - Non-Flight-Deck fallback shells
