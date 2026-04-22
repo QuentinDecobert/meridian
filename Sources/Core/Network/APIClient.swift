@@ -43,9 +43,23 @@ struct URLSessionAPIClient: APIClient {
 
         switch http.statusCode {
         case 200..<300:
+            // Detect "soft auth failure": claude.ai sometimes responds with
+            // 200 OK to an expired cookie, serving the login page (HTML) or a
+            // truncated/alternate JSON payload instead of a clean 401. Without
+            // this check, the decoder fails and the user sees a scary
+            // "Unexpected format" popover when their session has simply
+            // expired. We treat the two telltale shapes — HTML response or
+            // JSON-that-doesn't-decode-and-doesn't-look-like-our-type — as
+            // `.unauthenticated` so the popover lands cleanly on Sign in.
+            if isLikelyLoginPage(data: data, response: http) {
+                throw APIError.unauthenticated
+            }
             do {
                 return try decoder.decode(T.self, from: data)
             } catch {
+                if looksUnauthenticated(data: data) {
+                    throw APIError.unauthenticated
+                }
                 throw APIError.decoding(error)
             }
         case 401, 403:
@@ -58,5 +72,46 @@ struct URLSessionAPIClient: APIClient {
         default:
             throw APIError.invalidResponse
         }
+    }
+
+    private func isLikelyLoginPage(data: Data, response: HTTPURLResponse) -> Bool {
+        SoftAuthFailureHeuristics.isLikelyLoginPage(data: data, response: response)
+    }
+
+    private func looksUnauthenticated(data: Data) -> Bool {
+        SoftAuthFailureHeuristics.looksUnauthenticated(data: data)
+    }
+}
+
+/// Heuristics for detecting the claude.ai "soft auth failure" — where an
+/// expired cookie yields a 200 OK serving the login page HTML or an alternate
+/// JSON body, instead of a clean 401. Extracted as a static type for
+/// testability (see `APIClientSoftAuthFailureTests`).
+enum SoftAuthFailureHeuristics {
+    /// Fast path: if the server declares `text/html` (or the body begins with
+    /// an HTML doctype/tag), the 200 is almost certainly the login page.
+    static func isLikelyLoginPage(data: Data, response: HTTPURLResponse) -> Bool {
+        if let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
+           contentType.contains("text/html") {
+            return true
+        }
+        return startsWithHTMLMarker(data: data)
+    }
+
+    /// Slow path, used when the JSON decode has already failed. Inspects the
+    /// body for the same HTML markers + an empty body case. Anything else is
+    /// presumed to be a genuine decoding failure (API schema change).
+    static func looksUnauthenticated(data: Data) -> Bool {
+        if data.isEmpty { return true }
+        return startsWithHTMLMarker(data: data)
+    }
+
+    /// Skip leading whitespace, then look for `<` — HTML always opens with
+    /// `<!DOCTYPE`, `<html`, or a comment.
+    static func startsWithHTMLMarker(data: Data) -> Bool {
+        let prefix = data.prefix(32)
+        guard let string = String(data: prefix, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return string.hasPrefix("<")
     }
 }
