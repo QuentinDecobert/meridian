@@ -39,8 +39,27 @@ struct URLSessionAPIClient: APIClient {
     let urlSession: URLSession
     let decoder: JSONDecoder
 
-    init(urlSession: URLSession = .shared, decoder: JSONDecoder = .claudeAI) {
-        self.urlSession = urlSession
+    /// Ephemeral by default: no on-disk cookie jar, no on-disk URL cache
+    /// (MER-SEC-007). Meridian sends the `Cookie` header explicitly from
+    /// the Keychain-persisted `SessionCookie`, so the default
+    /// `HTTPCookieStorage` would only accumulate residual state; likewise
+    /// `URLCache.shared` would persist the usage response body
+    /// (containing the `organization_id` in the cache key) for no
+    /// benefit — the quota is only fetched once every few minutes.
+    ///
+    /// Exposed via `init(urlSession:)` so tests can inject a configured
+    /// `URLProtocol`-backed session.
+    static func makeEphemeralSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config)
+    }
+
+    init(urlSession: URLSession? = nil, decoder: JSONDecoder = .claudeAI) {
+        self.urlSession = urlSession ?? Self.makeEphemeralSession()
         self.decoder = decoder
     }
 
