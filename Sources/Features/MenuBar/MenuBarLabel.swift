@@ -33,6 +33,14 @@ struct MenuBarLabel: View {
         return false
     }
 
+    /// `true` when Claude API is currently in `.majorOutage` — drives the red
+    /// pip rendered before the update pip. Matches
+    /// `ClaudeStatus.isClaudeAPIMajorOutage` exactly so the chip, pip, and
+    /// bonus-wire copy stay in lockstep.
+    private var hasOutage: Bool {
+        statusChecker.status.isClaudeAPIMajorOutage
+    }
+
 
     // MARK: - Loaded state
 
@@ -49,7 +57,8 @@ struct MenuBarLabel: View {
                 fraction: fraction,
                 percentText: percentText,
                 timeText: timeText,
-                hasUpdate: hasUpdate
+                hasUpdate: hasUpdate,
+                hasOutage: hasOutage
             )
         } else {
             neutralLabel("—", status: .unused, fraction: 0)
@@ -76,7 +85,8 @@ struct MenuBarLabel: View {
             fraction: fraction,
             text: text,
             textColor: .primary,
-            hasUpdate: hasUpdate
+            hasUpdate: hasUpdate,
+            hasOutage: hasOutage
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Meridian — Claude quota")

@@ -246,9 +246,17 @@ struct MeridianMenuBarBitmap: View {
     /// right edge of the label so the arc icon itself stays a clean silhouette
     /// — the pip semantically belongs to the whole label, not to the quota.
     var hasUpdate: Bool = false
+    /// When `true`, a small red pip is drawn after the text, **before** the
+    /// update pip if both are active. Red is more urgent than blue so it
+    /// earns the slot closest to the text. Static (same rationale as the
+    /// update pip — no animation in the menu bar).
+    var hasOutage: Bool = false
     /// Gap between the text and the update pip. Slightly tighter than the
     /// icon/text gap so the pip reads as "attached" to the label.
     var pipLeadingGap: CGFloat = 4
+    /// Gap between the two pips when both are visible (outage + update).
+    /// Matches the proto's ~3 pt separation.
+    var pipInterGap: CGFloat = 3
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -273,11 +281,16 @@ struct MeridianMenuBarBitmap: View {
         //     without manual padding, matching the proto's flex `align-items:
         //     center`.
         //
-        // Layout is [arc-icon] [text] [pip]. The pip is flattened into the
-        // same NSImage as the rest of the label — `MenuBarExtra(label:)`
-        // reassembles loose Image/Text pairs with its own spacing (see the
-        // class-level docstring), so we keep everything in one bitmap.
+        // Layout is [arc-icon] [text] [outage-pip] [update-pip]. Pips are
+        // flattened into the same NSImage as the rest of the label —
+        // `MenuBarExtra(label:)` reassembles loose Image/Text pairs with its
+        // own spacing (see the class-level docstring), so we keep everything
+        // in one bitmap.
+        //
+        // When both pips are active, the red outage pip sits closer to the
+        // text (more urgent) and the blue update pip sits at the far end.
         let update = hasUpdate
+        let outage = hasOutage
         let content = HStack(alignment: .center, spacing: 0) {
             MeridianArcIcon(status: status, fraction: fraction)
                 .frame(width: 14, height: 10)
@@ -290,13 +303,21 @@ struct MeridianMenuBarBitmap: View {
                 .foregroundStyle(textColor)
                 .fixedSize()
 
+            if outage {
+                // 6 pt solid red pip with a 1 pt dark ring — same format as
+                // the update pip, distinct color. Signals Claude API major
+                // outage. Static by design (no animation in the menu bar).
+                OutagePip()
+                    .padding(.leading, pipLeadingGap)
+            }
+
             if update {
-                // 6 pt solid pip with a 1 pt dark ring so it survives on
+                // 6 pt solid blue pip with a 1 pt dark ring so it survives on
                 // bright wallpapers. Placed after the text — see the
                 // `designs/update-indicator.html` § 01 reference, translated
                 // from icon-corner to end-of-label per product decision.
                 UpdatePip()
-                    .padding(.leading, pipLeadingGap)
+                    .padding(.leading, outage ? pipInterGap : pipLeadingGap)
             }
         }
         .environment(\.colorScheme, colorScheme)
@@ -332,6 +353,25 @@ struct UpdatePip: View {
     }
 }
 
+/// Outage indicator pip — 6 pt solid red circle with the same 1 pt dark ring
+/// treatment as `UpdatePip`, just tinted red.
+///
+/// Signals Claude API `.majorOutage` specifically. Static (no animation) to
+/// match macOS menu-bar conventions and stay consistent with `UpdatePip`.
+/// The pulsing animation only exists on the in-popover `StatusChip`, where
+/// it's out of the user's peripheral vision.
+struct OutagePip: View {
+    var body: some View {
+        Circle()
+            .fill(MeridianColors.red)
+            .frame(width: 6, height: 6)
+            .overlay(
+                Circle()
+                    .stroke(Color.black.opacity(0.55), lineWidth: 1)
+            )
+    }
+}
+
 /// Full menu-bar label : arc icon + `NN% · Hh MM` text. Used verbatim inside
 /// `MenuBarExtra(label:)` — must produce a bitmap height ≤ 22 pt per macOS
 /// HIG.
@@ -345,6 +385,7 @@ struct MeridianArcLabel: View {
     let percentText: String
     let timeText: String
     var hasUpdate: Bool = false
+    var hasOutage: Bool = false
 
     var body: some View {
         MeridianMenuBarBitmap(
@@ -352,7 +393,8 @@ struct MeridianArcLabel: View {
             fraction: fraction,
             text: "\(percentText) · \(timeText)",
             textColor: labelColor,
-            hasUpdate: hasUpdate
+            hasUpdate: hasUpdate,
+            hasOutage: hasOutage
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Meridian — Claude quota")
