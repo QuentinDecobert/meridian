@@ -58,6 +58,17 @@ open Meridian.xcodeproj
 - **Click the icon** — popover with the current 5-hour session, three weekly breakdowns (All models, Sonnet only, Claude design) and a link to Settings
 - **Settings** — launch at login, menu bar display (session / weekly), sign out
 
+## Claude infrastructure status
+
+Meridian keeps an eye on [status.claude.com](https://status.claude.com) so you know when your workflow is impacted by an Anthropic-side issue — not a Meridian bug.
+
+- **Popover header** — when **Claude API** or **Claude Code** is degraded, the timestamp is replaced by a status chip (e.g. `API · DEGRADED`, `CODE · PARTIAL`, `CLAUDE · OUTAGE`). Click it to open status.claude.com
+- **Popover body** — a compact **Claude status** section lists both components with their current state and, if active, the title and start time of the live incident
+- **Menu bar** — a **red dot** appears to the right of the text **only on a major API outage**. Degraded / partial outages stay silent in the menu bar
+- **Quota fetch correlation** — when Meridian can't refresh your quota AND Claude API is in a major outage, the hero shows `—` and explains *why* (so you don't think Meridian is the problem)
+
+The status endpoint is polled every 3 minutes with ETag revalidation — most calls cost zero bandwidth. Silent on network errors. No chip when everything is green.
+
 ## Keeping up to date
 
 Meridian pings GitHub every few hours and tells you when a new release is out.

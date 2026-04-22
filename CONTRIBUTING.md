@@ -22,18 +22,28 @@ open Meridian.xcodeproj
 
 ## Building and testing
 
-| Command          | What it does                                              |
-| ---------------- | --------------------------------------------------------- |
-| `make generate`  | Regenerate `Meridian.xcodeproj` from `project.yml`        |
-| `make build`     | Release build into `build/Build/Products/Release/`        |
-| `make install`   | Build and copy `Meridian.app` into `/Applications/`       |
-| `make clean`     | Wipe generated project and build artefacts                |
+| Command            | What it does                                              |
+| ------------------ | --------------------------------------------------------- |
+| `make generate`    | Regenerate `Meridian.xcodeproj` from `project.yml`        |
+| `make build`       | Release build into `build/Build/Products/Release/`        |
+| `make install`     | Build and copy `Meridian.app` into `/Applications/`       |
+| `make run-debug`   | Debug build + launch — exposes the in-app Debug panel     |
+| `make clean`       | Wipe generated project and build artefacts                |
 
 Run the tests from Xcode (`⌘U`) or from the command line:
 
 ```bash
 xcodebuild test -scheme Meridian -destination 'platform=macOS'
 ```
+
+### Visually validating the Claude status feature
+
+Debug builds expose a **Debug** section in the Settings window (`⌘,`) that lets you force each `ClaudeStatus` state without waiting for a real incident on `status.claude.com` :
+
+- **Mock Claude status** picker — cycle through `None (live data)`, `Degraded (API)`, `Partial outage (Code)`, `Major outage (API)`, `Under maintenance (API)`
+- **Force quota fetch error** toggle — combined with `Major outage (API)`, this triggers the full "API is down — that's why" bonus wire (red banner, stale footer)
+
+The panel is gated by `#if DEBUG` so it's **entirely stripped from Release builds** (`make build` / `make install`). Contributors validating a PR that touches `StatusChip`, `StatusSection`, the menu bar pip, or any status wiring should use `make run-debug` and walk through the picker.
 
 ## Coding conventions
 
