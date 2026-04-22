@@ -41,3 +41,14 @@ Out of scope:
 ## Disclosure philosophy
 
 We practice coordinated disclosure. Public release of details follows the fix by at least **7 days**, unless the reporter requests a shorter embargo and the fix is shipped.
+
+## Verifying what you build
+
+The v1 distribution is source-only (see `README.md` for why), signed ad-hoc at install time. Gatekeeper therefore can't attest to the binary's provenance — that responsibility falls to the user cloning the source tree. Minimum hygiene:
+
+1. Clone over HTTPS from the canonical repo: `https://github.com/quentindecobert/meridian.git`.
+2. Check out a specific tagged commit rather than `main` if you want a reproducible build.
+3. Inspect `git log --oneline origin/main` and confirm the tip commit's SHA matches what's published (release notes, announcements).
+4. On a release tag: `git verify-tag <tag>` to check the tag signature (once releases are signed).
+
+Until the project ships a notarised binary (see MER-SEC-010 in the initial audit), right-click → Open remains the only Gatekeeper bypass required. Do **not** disable Gatekeeper globally.
