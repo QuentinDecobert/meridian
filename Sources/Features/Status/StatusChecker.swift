@@ -44,9 +44,11 @@ final class StatusChecker: ObservableObject {
                 pollTask = nil
                 status = mock
             } else {
-                // Leaving mock mode — relaunch the normal poll so the next
-                // cycle brings real data back.
-                start()
+                // Leaving mock mode — reset the visible state immediately
+                // so the UI stops showing the stale mock, then fire a fresh
+                // poll with no initial delay so real data lands fast.
+                status = .unknown
+                start(immediate: true)
             }
         }
     }
@@ -72,7 +74,11 @@ final class StatusChecker: ObservableObject {
 
     /// Start the periodic poll. Safe to call multiple times — a second call
     /// cancels the first task.
-    func start() {
+    ///
+    /// - Parameter immediate: when `true`, skip `initialDelay` and fire the
+    ///   first check right away. Used when exiting a DEBUG mock so the UI
+    ///   doesn't hang on stale state for 5 s.
+    func start(immediate: Bool = false) {
         pollTask?.cancel()
 #if DEBUG
         // Debug override active — don't spin up a poll task that would
@@ -82,11 +88,13 @@ final class StatusChecker: ObservableObject {
             return
         }
 #endif
-        let initial = initialDelay
+        let initial: TimeInterval = immediate ? 0 : initialDelay
         let interval = pollInterval
         pollTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(initial))
-            if Task.isCancelled { return }
+            if initial > 0 {
+                try? await Task.sleep(for: .seconds(initial))
+                if Task.isCancelled { return }
+            }
             await self?.checkOnce()
 
             while !Task.isCancelled {
