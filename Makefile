@@ -1,4 +1,4 @@
-.PHONY: help generate prepare build install clean release
+.PHONY: help generate prepare build install clean release run-debug
 
 DERIVED := build
 APP_NAME := Meridian
@@ -11,6 +11,7 @@ help:
 	@echo "  make generate             Regenerate Meridian.xcodeproj from project.yml"
 	@echo "  make build                Build a Release .app into $(DERIVED)/Build/Products/Release/"
 	@echo "  make install              Build and copy $(APP_NAME).app into /Applications"
+	@echo "  make run-debug            Build + launch a Debug .app (enables the Settings Debug panel)"
 	@echo "  make release VERSION=X.Y.Z  Cut a new GitHub release (tag + push + gh release create)"
 	@echo "  make clean                Remove generated project and build artifacts"
 	@echo ""
@@ -70,6 +71,19 @@ install: build
 clean:
 	rm -rf $(DERIVED) $(APP_NAME).xcodeproj
 	@echo "✓ Cleaned build artifacts and generated project"
+
+run-debug: generate
+	@# Build Debug config and launch it (keeps the Debug flags active,
+	@# notably the SettingsView Debug section). Not for distribution.
+	@rm -rf build-debug
+	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(SCHEME) \
+		-configuration Debug -derivedDataPath build-debug \
+		CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build
+	@xattr -cr build-debug/Build/Products/Debug/$(APP_NAME).app
+	@codesign --force --sign - --entitlements Sources/App/$(APP_NAME).entitlements --deep build-debug/Build/Products/Debug/$(APP_NAME).app
+	@killall $(APP_NAME) 2>/dev/null || true
+	@open build-debug/Build/Products/Debug/$(APP_NAME).app
+	@echo "✓ Debug Meridian launched — open Settings to access the Debug panel."
 
 # Cut a release. Usage :  make release VERSION=0.2.0
 #
