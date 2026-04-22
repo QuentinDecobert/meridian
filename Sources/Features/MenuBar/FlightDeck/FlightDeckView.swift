@@ -37,6 +37,12 @@ struct FlightDeckView: View {
     /// AND Claude API is in `.majorOutage` — otherwise we fall back to the
     /// regular error/loaded paths.
     var bonusWireContext: BonusWireContext? = nil
+    /// Optional API-usage context. When present and a snapshot is available,
+    /// the compact API mini-section slots in between the subscription
+    /// breakdown and the footer. When `isShowingDetail` is true, the
+    /// dashboard body is replaced by the full API Flight Deck (analogue
+    /// to the update panel swap).
+    var apiContext: APIContext? = nil
 
     /// Pulls the live "now" so the header clock and the countdown can update
     /// without spinning up a timer inside the view — the parent is expected
@@ -73,6 +79,24 @@ struct FlightDeckView: View {
         /// Last successful quota refresh. `nil` when Meridian never
         /// managed a successful fetch (the banner then reads "unknown").
         let lastRefreshedAt: Date?
+    }
+
+    /// Carrier for the API usage mini-section + optional full panel swap.
+    /// Two separate concerns are glued together here — whether to render
+    /// the mini-section below the breakdown, and whether to swap the body
+    /// out for the full API Flight Deck — because the header/footer want
+    /// to know both to coordinate the BACK chip.
+    struct APIContext {
+        /// The month-to-date snapshot that drives the mini-section and
+        /// the panel. When `nil`, neither is rendered — the caller is
+        /// expected to guard on `APIUsageChecker.status == .available`.
+        let snapshot: APIUsageSnapshot?
+        /// `true` when the user has tapped the mini-section and the
+        /// full panel is replacing the dashboard body.
+        let isShowingDetail: Bool
+        /// Tap handler for both the mini-section and the BACK chip —
+        /// toggles `isShowingDetail` in the caller.
+        let onToggleDetail: () -> Void
     }
 
     /// `true` when `statusContext` resolves to a degraded state deserving a
@@ -182,6 +206,16 @@ struct FlightDeckView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 14)
                 .overlay(alignment: .top) { solidHairline }
+        }
+
+        // Compact API mini-section (proposition A, collapsed state).
+        // Hidden entirely unless a snapshot is available — the caller
+        // guards on `APIUsageChecker.isConfigured` + `.available`.
+        if let apiContext, let snapshot = apiContext.snapshot {
+            APIUsageSection(
+                snapshot: snapshot,
+                onTap: apiContext.onToggleDetail
+            )
         }
     }
 

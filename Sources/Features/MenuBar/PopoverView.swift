@@ -14,12 +14,18 @@ struct PopoverView: View {
     @EnvironmentObject var quotaStore: QuotaStore
     @EnvironmentObject var updateChecker: UpdateChecker
     @EnvironmentObject var statusChecker: StatusChecker
+    @EnvironmentObject var apiUsageChecker: APIUsageChecker
     @Environment(\.openWindow) private var openWindow
 
     /// Local swap toggle — whether the user is currently looking at the
     /// update detail panel or the dashboard. Not persisted: reopening the
     /// popover always lands on the dashboard, per the interaction spec.
     @State private var isShowingUpdateDetail: Bool = false
+
+    /// Same pattern as `isShowingUpdateDetail`, but for the API Flight
+    /// Deck swap. Exclusive with `isShowingUpdateDetail` — the popover
+    /// never shows both detail panels at once.
+    @State private var isShowingAPIDetail: Bool = false
 
     var body: some View {
         content
@@ -32,6 +38,11 @@ struct PopoverView: View {
                 // install and the next check matches), return to the
                 // dashboard silently.
                 if !newValue { isShowingUpdateDetail = false }
+            }
+            .onChange(of: apiUsageChecker.isConfigured) { configured in
+                // If the user removes the API key while the detail panel
+                // is open, collapse back to the dashboard.
+                if !configured { isShowingAPIDetail = false }
             }
     }
 
@@ -50,7 +61,8 @@ struct PopoverView: View {
                     snapshot: snapshot,
                     onOpenSettings: openSettings,
                     updateContext: updateContext,
-                    statusContext: statusContext
+                    statusContext: statusContext,
+                    apiContext: apiContext
                 )
             } else {
                 loadingShell
@@ -164,6 +176,25 @@ struct PopoverView: View {
     private var statusContext: FlightDeckView.StatusContext? {
         guard case .degraded = statusChecker.status else { return nil }
         return FlightDeckView.StatusContext(status: statusChecker.status)
+    }
+
+    // MARK: - API usage wiring
+
+    /// Build the API usage context handed to `FlightDeckView`. Returns
+    /// `nil` when no key is configured (mini-section hidden entirely).
+    /// When configured, the context carries the latest snapshot — or
+    /// `nil` snapshot while loading/erroring — plus the swap toggle.
+    private var apiContext: FlightDeckView.APIContext? {
+        guard apiUsageChecker.isConfigured else { return nil }
+        let snapshot: APIUsageSnapshot? = {
+            if case .available(let snap) = apiUsageChecker.status { return snap }
+            return nil
+        }()
+        return FlightDeckView.APIContext(
+            snapshot: snapshot,
+            isShowingDetail: isShowingAPIDetail,
+            onToggleDetail: { isShowingAPIDetail.toggle() }
+        )
     }
 
     // MARK: - Non-Flight-Deck fallback shells

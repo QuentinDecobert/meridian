@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var quotaStore: QuotaStore
+    @ObservedObject var apiUsageChecker: APIUsageChecker
 #if DEBUG
     @ObservedObject var statusChecker: StatusChecker
 #endif

@@ -9,6 +9,7 @@ struct MeridianApp: App {
     @StateObject private var preferences: Preferences
     @StateObject private var updateChecker: UpdateChecker
     @StateObject private var statusChecker: StatusChecker
+    @StateObject private var apiUsageChecker: APIUsageChecker
     private let scheduler: RefreshScheduler
 
     init() {
@@ -16,14 +17,17 @@ struct MeridianApp: App {
         let prefs = Preferences()
         let checker = UpdateChecker()
         let status = StatusChecker()
+        let apiUsage = APIUsageChecker()
         _quotaStore = StateObject(wrappedValue: store)
         _preferences = StateObject(wrappedValue: prefs)
         _updateChecker = StateObject(wrappedValue: checker)
         _statusChecker = StateObject(wrappedValue: status)
+        _apiUsageChecker = StateObject(wrappedValue: apiUsage)
         scheduler = RefreshScheduler(quotaStore: store)
         scheduler.start()
         checker.start()
         status.start()
+        apiUsage.start()
         launchLogger.info("Meridian launching")
     }
 
@@ -34,6 +38,7 @@ struct MeridianApp: App {
                 .environmentObject(preferences)
                 .environmentObject(updateChecker)
                 .environmentObject(statusChecker)
+                .environmentObject(apiUsageChecker)
         } label: {
             MenuBarLabel(
                 quotaStore: quotaStore,
@@ -47,6 +52,7 @@ struct MeridianApp: App {
         Window("Connect Claude", id: "onboarding") {
             OnboardingView()
                 .environmentObject(quotaStore)
+                .environmentObject(apiUsageChecker)
         }
         .windowResizability(.contentSize)
 
@@ -55,10 +61,15 @@ struct MeridianApp: App {
             SettingsView(
                 preferences: preferences,
                 quotaStore: quotaStore,
+                apiUsageChecker: apiUsageChecker,
                 statusChecker: statusChecker
             )
 #else
-            SettingsView(preferences: preferences, quotaStore: quotaStore)
+            SettingsView(
+                preferences: preferences,
+                quotaStore: quotaStore,
+                apiUsageChecker: apiUsageChecker
+            )
 #endif
         }
         .windowResizability(.contentSize)
