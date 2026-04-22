@@ -8,9 +8,11 @@ protocol GitHubFetching: Sendable {
     /// has no published release yet.
     func fetchLatestRelease() async throws -> LatestRelease
 
-    /// Fetch how many commits `head` is ahead of `base`. Returns 0 if the two
-    /// refs point at the same commit.
-    func fetchAheadBy(base: String, head: String) async throws -> Int
+    /// Fetch the topology between `base` and `head` as GitHub sees it.
+    /// Returns both `ahead_by` (commits on `head` missing from `base`) and
+    /// `behind_by` (commits on `base` missing from `head`). Needed to tell
+    /// "base strictly behind head" from "base strictly ahead" or "diverged".
+    func fetchCompareCounts(base: String, head: String) async throws -> CompareCounts
 }
 
 /// Pair returned by `fetchLatestRelease`: the marketing tag (verbatim, kept
@@ -22,6 +24,22 @@ struct LatestRelease: Equatable, Sendable {
     let tagName: String
     /// Commit SHA the tag resolves to, e.g. `abc1234...`.
     let commitSHA: String
+}
+
+/// Two-axis result of `GET /compare/{base}...{head}`.
+///
+/// - `ahead`: commits on `head` not reachable from `base` (how far `base` is
+///   behind `head`).
+/// - `behind`: commits on `base` not reachable from `head` (how far `base` is
+///   ahead of `head`).
+///
+/// We need both to decide between "base strictly behind head" (ahead > 0,
+/// behind == 0 → update available), "base strictly ahead" (ahead == 0,
+/// behind > 0 → local build is newer than the release) and "diverged" (both
+/// positive → maintainer rewrote history, nothing actionable).
+struct CompareCounts: Equatable, Sendable {
+    let ahead: Int
+    let behind: Int
 }
 
 /// Narrow, typed error surface for the update checker. Everything that goes
@@ -80,9 +98,10 @@ struct GitHubUpdateClient: GitHubFetching {
         return LatestRelease(tagName: release.tag_name, commitSHA: commit.sha)
     }
 
-    func fetchAheadBy(base: String, head: String) async throws -> Int {
-        // `compare/{base}...{head}` — `ahead_by` = commits on `head` not
-        // reachable from `base`. Safe against force-pushes: a SHA that GitHub
+    func fetchCompareCounts(base: String, head: String) async throws -> CompareCounts {
+        // `compare/{base}...{head}` — returns both `ahead_by` (commits on
+        // `head` missing from `base`) and `behind_by` (commits on `base`
+        // missing from `head`). Safe against force-pushes: a SHA that GitHub
         // no longer knows about yields a 404 (mapped to `.notFound`).
         let encodedBase = base.addingPercentEncoding(
             withAllowedCharacters: .urlPathAllowed
@@ -92,7 +111,7 @@ struct GitHubUpdateClient: GitHubFetching {
         ) ?? head
         let url = URL(string: "https://api.github.com/repos/\(Self.repository)/compare/\(encodedBase)...\(encodedHead)")!
         let payload: CompareResponse = try await get(url: url)
-        return payload.ahead_by
+        return CompareCounts(ahead: payload.ahead_by, behind: payload.behind_by)
     }
 
     // MARK: - HTTP core
@@ -150,11 +169,14 @@ private struct CommitResponse: Decodable {
 }
 
 /// Subset of the `GET /repos/:owner/:repo/compare/{base}...{head}` response.
-/// `ahead_by` = commits on `head` not reachable from `base`.
+/// `ahead_by` = commits on `head` not reachable from `base`; `behind_by` =
+/// commits on `base` not reachable from `head`. Both are needed to tell
+/// "base behind head" from "base ahead of head" from "diverged".
 ///
 /// GitHub's snake_case is preserved here so we don't have to opt in to a
 /// custom decoding strategy that could bite the rest of the app.
 // swiftlint:disable:next identifier_name
 private struct CompareResponse: Decodable {
     let ahead_by: Int
+    let behind_by: Int
 }

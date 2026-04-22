@@ -109,25 +109,45 @@ final class UpdateChecker: ObservableObject {
             return
         }
 
-        // Don't block on the compare call: if it fails we still know an
-        // update is available, just not how many commits ahead.
-        var ahead = 0
+        // Ask GitHub how the two commits relate. We need BOTH axes:
+        //   ahead > 0, behind == 0 → local is strictly behind the release → update available
+        //   ahead == 0, behind > 0 → local is strictly ahead of the release → up to date
+        //   both > 0               → diverged (maintainer rewrote history)  → up to date (nothing actionable)
+        //   both == 0              → SHAs equivalent                        → up to date
+        // If the compare call itself fails we fall back to "update available"
+        // with an unknown ahead count, matching the previous behaviour for
+        // unreachable SHAs (force push on main).
+        let counts: CompareCounts?
         do {
-            ahead = try await client.fetchAheadBy(
+            counts = try await client.fetchCompareCounts(
                 base: localSHA,
                 head: release.commitSHA
             )
         } catch {
-            updateLogger.debug("fetchAheadBy failed: \(String(describing: error), privacy: .public)")
+            updateLogger.debug("fetchCompareCounts failed: \(String(describing: error), privacy: .public)")
+            counts = nil
         }
 
-        // `ahead == 0` with different SHAs is rare but possible (the tag
-        // points at a commit the local build doesn't contain, yet the
-        // compare call counts no commits between them — e.g. local SHA on a
-        // stale branch). Still an "update available" situation.
+        if let counts {
+            if counts.ahead > 0 && counts.behind == 0 {
+                status = .available(
+                    remoteSHA: release.commitSHA,
+                    ahead: counts.ahead,
+                    remoteVersion: remoteVersion
+                )
+            } else {
+                // Strictly ahead, diverged, or topologically identical:
+                // nothing to offer the user.
+                status = .upToDate
+            }
+            return
+        }
+
+        // Compare failed. SHAs differ, topology unknown — report the update
+        // with ahead == 0 rather than swallow the signal entirely.
         status = .available(
             remoteSHA: release.commitSHA,
-            ahead: ahead,
+            ahead: 0,
             remoteVersion: remoteVersion
         )
     }

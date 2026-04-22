@@ -14,7 +14,7 @@ final class UpdateCheckerTests: XCTestCase {
     func testSameSHAResolvesToUpToDate() async {
         let stub = StubGitHub(
             release: .success(LatestRelease(tagName: "v0.1.4", commitSHA: "abc123")),
-            aheadBy: .success(0)
+            compare: .success(CompareCounts(ahead: 0, behind: 0))
         )
         let checker = UpdateChecker(
             client: stub,
@@ -26,10 +26,12 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(checker.status, .upToDate)
     }
 
-    func testDifferentSHAResolvesToAvailableWithVersionAndAheadCount() async {
+    func testStrictlyBehindLatestReleaseResolvesToAvailable() async {
+        // ahead_by > 0 && behind_by == 0 — the canonical "update available"
+        // case. Local build is missing commits that the release has.
         let stub = StubGitHub(
             release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "newSHA456")),
-            aheadBy: .success(3)
+            compare: .success(CompareCounts(ahead: 3, behind: 0))
         )
         let checker = UpdateChecker(
             client: stub,
@@ -49,7 +51,7 @@ final class UpdateCheckerTests: XCTestCase {
         // leading v off.
         let stub = StubGitHub(
             release: .success(LatestRelease(tagName: "0.2.0", commitSHA: "newSHA")),
-            aheadBy: .success(1)
+            compare: .success(CompareCounts(ahead: 1, behind: 0))
         )
         let checker = UpdateChecker(
             client: stub,
@@ -64,13 +66,50 @@ final class UpdateCheckerTests: XCTestCase {
         )
     }
 
+    func testLocalAheadOfLatestReleaseResolvesToUpToDate() async {
+        // ahead_by == 0 && behind_by > 0 — the maintainer has kept committing
+        // on main after cutting the release. The local build is strictly
+        // ahead of the tag, so nothing to offer the user.
+        let stub = StubGitHub(
+            release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "oldTagSHA")),
+            compare: .success(CompareCounts(ahead: 0, behind: 4))
+        )
+        let checker = UpdateChecker(
+            client: stub,
+            localSHA: "newerLocalSHA",
+            pollInterval: 3600,
+            initialDelay: 0
+        )
+        await checker.checkOnce()
+        XCTAssertEqual(checker.status, .upToDate)
+    }
+
+    func testDivergedHistoryResolvesToUpToDate() async {
+        // ahead_by > 0 && behind_by > 0 — the two SHAs live on branches that
+        // forked at some common ancestor (typically after a maintainer
+        // rewrote history on main). Nothing actionable.
+        let stub = StubGitHub(
+            release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "branchA")),
+            compare: .success(CompareCounts(ahead: 2, behind: 3))
+        )
+        let checker = UpdateChecker(
+            client: stub,
+            localSHA: "branchB",
+            pollInterval: 3600,
+            initialDelay: 0
+        )
+        await checker.checkOnce()
+        XCTAssertEqual(checker.status, .upToDate)
+    }
+
     func testAvailableWhenCompareFailsStillReportsUpdateWithZeroAhead() async {
         // If `/releases/latest` succeeds but `/compare` 404s (force push,
-        // unreachable base), we still know an update is available — we just
-        // can't count commits.
+        // unreachable base), topology is unknown. Fall back to "update
+        // available" with ahead == 0 — we can't count commits, but we know
+        // the SHAs differ and the other branches are all benign.
         let stub = StubGitHub(
             release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "newSHA")),
-            aheadBy: .failure(GitHubUpdateError.notFound)
+            compare: .failure(GitHubUpdateError.notFound)
         )
         let checker = UpdateChecker(
             client: stub,
@@ -91,7 +130,7 @@ final class UpdateCheckerTests: XCTestCase {
         // established.
         let stub = StubGitHub(
             release: .failure(GitHubUpdateError.rateLimited),
-            aheadBy: .success(0)
+            compare: .success(CompareCounts(ahead: 0, behind: 0))
         )
         let checker = UpdateChecker(
             client: stub,
@@ -109,7 +148,7 @@ final class UpdateCheckerTests: XCTestCase {
         // NOT fall back to comparing against `main`.
         let stub = StubGitHub(
             release: .failure(GitHubUpdateError.notFound),
-            aheadBy: .success(0)
+            compare: .success(CompareCounts(ahead: 0, behind: 0))
         )
         let checker = UpdateChecker(
             client: stub,
@@ -181,14 +220,14 @@ final class UpdateCheckerTests: XCTestCase {
 /// tests are `@MainActor` and the checker hops off to await the stub.
 private struct StubGitHub: GitHubFetching {
     let release: Result<LatestRelease, GitHubUpdateError>
-    let aheadBy: Result<Int, GitHubUpdateError>
+    let compare: Result<CompareCounts, GitHubUpdateError>
 
     func fetchLatestRelease() async throws -> LatestRelease {
         try release.get()
     }
 
-    func fetchAheadBy(base: String, head: String) async throws -> Int {
-        try aheadBy.get()
+    func fetchCompareCounts(base: String, head: String) async throws -> CompareCounts {
+        try compare.get()
     }
 }
 
@@ -199,8 +238,8 @@ private struct ExplodingGitHub: GitHubFetching {
         XCTFail("fetchLatestRelease must not be called when local SHA is absent")
         throw GitHubUpdateError.invalidResponse
     }
-    func fetchAheadBy(base: String, head: String) async throws -> Int {
-        XCTFail("fetchAheadBy must not be called when local SHA is absent")
+    func fetchCompareCounts(base: String, head: String) async throws -> CompareCounts {
+        XCTFail("fetchCompareCounts must not be called when local SHA is absent")
         throw GitHubUpdateError.invalidResponse
     }
 }

@@ -70,19 +70,19 @@ final class GitHubUpdateClientTests: XCTestCase {
         }
     }
 
-    func testFetchAheadByParsesCompareResponseForTagHead() async throws {
+    func testFetchCompareCountsParsesBothAxesForTagHead() async throws {
         MockURLProtocol.handler = { request in
             XCTAssertEqual(
                 request.url?.absoluteString,
                 "https://api.github.com/repos/QuentinDecobert/meridian/compare/oldSHA...tagSHA"
             )
-            let body = Data(#"{"ahead_by":7,"behind_by":0,"status":"ahead"}"#.utf8)
+            let body = Data(#"{"ahead_by":7,"behind_by":2,"status":"diverged"}"#.utf8)
             return (Self.ok200(for: request), body)
         }
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
-        let ahead = try await client.fetchAheadBy(base: "oldSHA", head: "tagSHA")
-        XCTAssertEqual(ahead, 7)
+        let counts = try await client.fetchCompareCounts(base: "oldSHA", head: "tagSHA")
+        XCTAssertEqual(counts, CompareCounts(ahead: 7, behind: 2))
     }
 
     func testRateLimitMapsToRateLimitedError() async {
@@ -120,7 +120,7 @@ final class GitHubUpdateClientTests: XCTestCase {
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
         do {
-            _ = try await client.fetchAheadBy(base: "forcePushedSHA", head: "tagSHA")
+            _ = try await client.fetchCompareCounts(base: "forcePushedSHA", head: "tagSHA")
             XCTFail("Expected notFound")
         } catch let error as GitHubUpdateError {
             XCTAssertEqual(error, .notFound)
