@@ -68,4 +68,19 @@ enum MeridianColors {
 
     /// `#F6EDD4` — stroke around the NOW marker polygon.
     static let nowStroke = Color(hex: 0xF6EDD4)
+
+    // MARK: - Accent · update blue (pip + chip in "update available" flow)
+
+    /// `--m-blue` — update chip / menu-bar pip solid.
+    static let updateBlue = Color(hex: 0x6BA8D4)
+    /// `--m-blue-2` — brighter hover state.
+    static let updateBlueBright = Color(hex: 0x9BC5E0)
+    /// `--m-blue-bg` — update chip fill at 10%.
+    static let updateBlueBG = Color(hex: 0x6BA8D4, alpha: 0.10)
+    /// `--m-blue-bg-hover` — update chip hover fill at 20%.
+    static let updateBlueBGHover = Color(hex: 0x6BA8D4, alpha: 0.20)
+    /// `--m-blue-line` — update chip border at 34%.
+    static let updateBlueLine = Color(hex: 0x6BA8D4, alpha: 0.34)
+    /// `#08151E` — dark text color on the active (inverted) chip.
+    static let updateChipDark = Color(hex: 0x08151E)
 }
