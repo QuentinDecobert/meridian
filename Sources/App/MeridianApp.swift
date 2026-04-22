@@ -7,15 +7,19 @@ private let launchLogger = Logger(subsystem: "com.quentindecobert.meridian", cat
 struct MeridianApp: App {
     @StateObject private var quotaStore: QuotaStore
     @StateObject private var preferences: Preferences
+    @StateObject private var updateChecker: UpdateChecker
     private let scheduler: RefreshScheduler
 
     init() {
         let store = QuotaStore()
         let prefs = Preferences()
+        let checker = UpdateChecker()
         _quotaStore = StateObject(wrappedValue: store)
         _preferences = StateObject(wrappedValue: prefs)
+        _updateChecker = StateObject(wrappedValue: checker)
         scheduler = RefreshScheduler(quotaStore: store)
         scheduler.start()
+        checker.start()
         launchLogger.info("Meridian launching")
     }
 
@@ -24,8 +28,13 @@ struct MeridianApp: App {
             PopoverView()
                 .environmentObject(quotaStore)
                 .environmentObject(preferences)
+                .environmentObject(updateChecker)
         } label: {
-            MenuBarLabel(quotaStore: quotaStore, preferences: preferences)
+            MenuBarLabel(
+                quotaStore: quotaStore,
+                preferences: preferences,
+                updateChecker: updateChecker
+            )
         }
         .menuBarExtraStyle(.window)
 

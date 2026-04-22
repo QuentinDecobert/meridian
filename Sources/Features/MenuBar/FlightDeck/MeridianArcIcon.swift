@@ -241,6 +241,9 @@ struct MeridianMenuBarBitmap: View {
     /// Horizontal gap between icon and text, in points. Matches the proto's
     /// `.actual { gap: 6px }`.
     var spacing: CGFloat = 6
+    /// When `true`, a small blue pip is drawn in the top-right corner of the
+    /// arc icon. Static (no animation) per macOS menu-bar conventions.
+    var hasUpdate: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -264,9 +267,23 @@ struct MeridianMenuBarBitmap: View {
         //     the cap-line; `.center` balances arc-mass and x-height mass
         //     without manual padding, matching the proto's flex `align-items:
         //     center`.
+        let update = hasUpdate
         let content = HStack(alignment: .center, spacing: spacing) {
-            MeridianArcIcon(status: status, fraction: fraction)
-                .frame(width: 14, height: 10)
+            ZStack(alignment: .topTrailing) {
+                MeridianArcIcon(status: status, fraction: fraction)
+                    .frame(width: 14, height: 10)
+                if update {
+                    // 6 pt outer ring (dark) + 4 pt inner pip (update blue) —
+                    // matches `designs/update-indicator.html` § 01. Dark ring
+                    // preserves contrast against bright menu-bar wallpapers
+                    // and compensates for SF / macOS auto-dimming of tray
+                    // content.
+                    UpdatePip()
+                        // Nudge 2 pt up/right so the pip sits cleanly outside
+                        // the 14×10 arc box rather than clipping its corner.
+                        .offset(x: 2, y: -2)
+                }
+            }
             Text(text)
                 .font(.custom("JetBrainsMono-Medium", size: 11))
                 .tracking(0.44) // = .04em at 11 pt, matches proto `.actual`
@@ -276,6 +293,7 @@ struct MeridianMenuBarBitmap: View {
         }
         .environment(\.colorScheme, colorScheme)
         .padding(.vertical, 2) // breathing room so descenders are not clipped
+        .padding(.top, update ? 2 : 0) // extra room for the pip
 
         let renderer = ImageRenderer(content: content)
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
@@ -285,6 +303,24 @@ struct MeridianMenuBarBitmap: View {
         }
         image.isTemplate = false
         return image
+    }
+}
+
+/// Update indicator pip — 6 pt solid blue circle with a 1 pt dark ring so it
+/// stays visible on both light and dark menu-bar backgrounds.
+///
+/// Static by design (no animation): menu-bar indicators should not distract.
+/// Used inside `MeridianMenuBarBitmap` (flattened into the tray NSImage) and
+/// — one day — in any other tiny "new stuff here" context that needs it.
+struct UpdatePip: View {
+    var body: some View {
+        Circle()
+            .fill(MeridianColors.updateBlue)
+            .frame(width: 6, height: 6)
+            .overlay(
+                Circle()
+                    .stroke(Color.black.opacity(0.55), lineWidth: 1)
+            )
     }
 }
 
@@ -300,13 +336,15 @@ struct MeridianArcLabel: View {
     let fraction: Double
     let percentText: String
     let timeText: String
+    var hasUpdate: Bool = false
 
     var body: some View {
         MeridianMenuBarBitmap(
             status: status,
             fraction: fraction,
             text: "\(percentText) · \(timeText)",
-            textColor: labelColor
+            textColor: labelColor,
+            hasUpdate: hasUpdate
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Meridian — Claude quota")

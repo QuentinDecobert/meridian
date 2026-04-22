@@ -8,6 +8,7 @@ import SwiftUI
 struct MenuBarLabel: View {
     @ObservedObject var quotaStore: QuotaStore
     @ObservedObject var preferences: Preferences
+    @ObservedObject var updateChecker: UpdateChecker
 
     var body: some View {
         switch quotaStore.state {
@@ -20,6 +21,14 @@ struct MenuBarLabel: View {
         case .loaded(let quota):
             loadedLabel(for: quota)
         }
+    }
+
+    /// `true` when an update is available — drives the blue pip overlay that
+    /// lives on the corner of the arc icon. Recomputed cheaply every render
+    /// so the pip appears / disappears as soon as the checker flips.
+    private var hasUpdate: Bool {
+        if case .available = updateChecker.status { return true }
+        return false
     }
 
     // MARK: - Loaded state
@@ -36,7 +45,8 @@ struct MenuBarLabel: View {
                 status: status,
                 fraction: fraction,
                 percentText: percentText,
-                timeText: timeText
+                timeText: timeText,
+                hasUpdate: hasUpdate
             )
         } else {
             neutralLabel("—", status: .unused, fraction: 0)
@@ -62,7 +72,8 @@ struct MenuBarLabel: View {
             status: status,
             fraction: fraction,
             text: text,
-            textColor: .primary
+            textColor: .primary,
+            hasUpdate: hasUpdate
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Meridian — Claude quota")
