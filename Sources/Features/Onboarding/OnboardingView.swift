@@ -3,6 +3,7 @@ import AppKit
 
 struct OnboardingView: View {
     @EnvironmentObject var quotaStore: QuotaStore
+    @EnvironmentObject var apiUsageChecker: APIUsageChecker
     @StateObject private var coordinator = OnboardingCoordinator()
 
     var body: some View {
@@ -10,12 +11,18 @@ struct OnboardingView: View {
             switch coordinator.state {
             case .intro:
                 OnboardingIntroView(
-                    onLogin: { coordinator.startWebLogin() }
+                    onLogin: { coordinator.startWebLogin() },
+                    onSkipToAPI: { coordinator.skipClaudeAI() }
                 )
             case .webLogin:
                 webLoginLayout
             case .processing:
                 processingLayout
+            case .adminKeyPrompt:
+                OnboardingAdminKeyStep(
+                    onSave: { coordinator.saveAdminKey($0) },
+                    onSkip: { coordinator.skipAdminKey() }
+                )
             case .success:
                 successLayout
             case .failure(let message):
@@ -28,6 +35,10 @@ struct OnboardingView: View {
             guard newState == .success else { return }
             Task { @MainActor in
                 await quotaStore.refresh()
+                // Kick the API checker as well — if an Admin Key was just
+                // saved, we want the popover to reflect real numbers on
+                // first open, not wait a full 15-minute tick.
+                apiUsageChecker.reconfigure()
                 try? await Task.sleep(for: .seconds(1))
                 let window = NSApp.windows.first(where: { $0.title == "Connect Claude" })
                     ?? NSApp.keyWindow

@@ -2,6 +2,11 @@ import SwiftUI
 
 struct OnboardingIntroView: View {
     let onLogin: () -> Void
+    /// Skip the claude.ai step and jump straight to the Admin Key prompt.
+    /// Surfaces the new "every connection is optional" contract — the
+    /// user can opt out of subscription tracking if they only care about
+    /// API usage.
+    var onSkipToAPI: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 24) {
@@ -15,19 +20,25 @@ struct OnboardingIntroView: View {
                 Text("Connect your Claude account")
                     .font(TypeScale.display)
                     .foregroundStyle(SemanticColor.textPrimary)
-                Text("Meridian needs a claude.ai session to display your quota in real time.")
+                Text("Meridian tracks your claude.ai quota and your Anthropic API spend. Each connection is optional — start with the one you care about.")
                     .font(TypeScale.body)
                     .foregroundStyle(SemanticColor.textSecondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
+                    .frame(maxWidth: 400)
             }
 
-            Button(action: onLogin) {
-                Text("Sign in to claude.ai")
-                    .frame(minWidth: 240)
+            VStack(spacing: 12) {
+                Button(action: onLogin) {
+                    Text("Sign in to claude.ai")
+                        .frame(minWidth: 240)
+                }
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+
+                Button("Skip, use API only", action: onSkipToAPI)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(SemanticColor.textSecondary)
             }
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
 
             Spacer()
         }
@@ -38,6 +49,6 @@ struct OnboardingIntroView: View {
 }
 
 #Preview {
-    OnboardingIntroView(onLogin: {})
+    OnboardingIntroView(onLogin: {}, onSkipToAPI: {})
         .frame(width: 480, height: 400)
 }
