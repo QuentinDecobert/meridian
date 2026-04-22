@@ -1,4 +1,4 @@
-.PHONY: help generate prepare build install clean
+.PHONY: help generate prepare build install clean release
 
 DERIVED := build
 APP_NAME := Meridian
@@ -8,10 +8,11 @@ CONFIG := Release
 help:
 	@echo "Meridian — available commands:"
 	@echo ""
-	@echo "  make generate   Regenerate Meridian.xcodeproj from project.yml"
-	@echo "  make build      Build a Release .app into $(DERIVED)/Build/Products/Release/"
-	@echo "  make install    Build and copy $(APP_NAME).app into /Applications"
-	@echo "  make clean      Remove generated project and build artifacts"
+	@echo "  make generate             Regenerate Meridian.xcodeproj from project.yml"
+	@echo "  make build                Build a Release .app into $(DERIVED)/Build/Products/Release/"
+	@echo "  make install              Build and copy $(APP_NAME).app into /Applications"
+	@echo "  make release VERSION=X.Y.Z  Cut a new GitHub release (tag + push + gh release create)"
+	@echo "  make clean                Remove generated project and build artifacts"
 	@echo ""
 	@echo "Requirements : xcodegen (brew install xcodegen), Xcode 15+"
 
@@ -69,3 +70,39 @@ install: build
 clean:
 	rm -rf $(DERIVED) $(APP_NAME).xcodeproj
 	@echo "✓ Cleaned build artifacts and generated project"
+
+# Cut a release. Usage :  make release VERSION=0.2.0
+#
+# Steps :
+#   1. Sanity checks (gh installed, VERSION provided, working copy clean)
+#   2. Bump MARKETING_VERSION in project.yml
+#   3. Regenerate Meridian.xcodeproj
+#   4. Commit `chore(release): vX.Y.Z`
+#   5. Annotated tag `vX.Y.Z`
+#   6. Push commit + tag to origin/main
+#   7. gh release create vX.Y.Z --generate-notes
+#
+# Aborts at the first failure — no partial state. If you need to undo, the
+# commit and tag are local-only until step 6.
+release:
+	@command -v gh >/dev/null 2>&1 || { echo >&2 "error: 'gh' not found. Install it: brew install gh — then authenticate with 'gh auth login'."; exit 1; }
+	@command -v xcodegen >/dev/null 2>&1 || { echo >&2 "error: 'xcodegen' not found. Install it: brew install xcodegen"; exit 1; }
+	@if [ -z "$(VERSION)" ]; then echo >&2 "error: VERSION is required. Usage: make release VERSION=0.2.0"; exit 1; fi
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo >&2 "error: VERSION must be semver MAJOR.MINOR.PATCH (got '$(VERSION)')"; exit 1; }
+	@if [ -n "$$(git status --porcelain)" ]; then echo >&2 "error: working copy is not clean. Commit or stash your changes first."; git status --short >&2; exit 1; fi
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo >&2 "error: tag v$(VERSION) already exists locally."; exit 1; fi
+	@echo "Cutting release v$(VERSION) …"
+	@# Bump the marketing version in project.yml. We match the existing
+	@# quoted form so we don't touch anything else.
+	@/usr/bin/sed -i '' -E 's/^(    MARKETING_VERSION: )"[^"]*"/\1"$(VERSION)"/' project.yml
+	@grep -q 'MARKETING_VERSION: "$(VERSION)"' project.yml || { echo >&2 "error: failed to bump MARKETING_VERSION in project.yml"; exit 1; }
+	@xcodegen generate >/dev/null
+	@# `Meridian.xcodeproj` is gitignored — only `project.yml` is staged.
+	@git add project.yml
+	@git commit -m "chore(release): v$(VERSION)"
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@git push origin main
+	@git push origin "v$(VERSION)"
+	@gh release create "v$(VERSION)" --title "v$(VERSION)" --generate-notes
+	@echo ""
+	@echo "✓ Released v$(VERSION)"

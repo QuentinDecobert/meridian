@@ -69,6 +69,26 @@ Common prefixes: `feat`, `fix`, `refactor`, `perf`, `a11y`, `chore`, `docs`, `te
 
 The CI will run a build + tests on every push to the PR. Both must be green before merge.
 
+## Cutting a release
+
+Releases are published manually from a maintainer's machine — no CI workflow. The `release` target in the `Makefile` handles the full cut.
+
+Prerequisites : [`gh`](https://cli.github.com) (`brew install gh` then `gh auth login`) and a clean working copy on `main`.
+
+```bash
+make release VERSION=0.2.0
+```
+
+This :
+
+1. Bumps `MARKETING_VERSION` in `project.yml` and regenerates `Meridian.xcodeproj`
+2. Commits `chore(release): v0.2.0`
+3. Creates an annotated tag `v0.2.0`
+4. Pushes the commit and the tag to `origin/main`
+5. Creates the GitHub release with auto-generated notes (`gh release create v0.2.0 --generate-notes`)
+
+Version numbers follow semver (`MAJOR.MINOR.PATCH`, no leading `v` — the tag adds it). The target aborts early if `VERSION` is missing, malformed, `gh` is not installed, the working copy is dirty, or the tag already exists. Nothing is pushed until every local step has succeeded.
+
 ## Opening an issue
 
 - Use the **Bug report** template if something is broken.
