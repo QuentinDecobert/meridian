@@ -23,9 +23,10 @@ struct MenuBarLabel: View {
         }
     }
 
-    /// `true` when an update is available — drives the blue pip overlay that
-    /// lives on the corner of the arc icon. Recomputed cheaply every render
-    /// so the pip appears / disappears as soon as the checker flips.
+    /// `true` when an update is available — drives the blue pip rendered at
+    /// the end of the menu-bar label (after the `NN% · Hh MM` text).
+    /// Recomputed cheaply every render so the pip appears / disappears as
+    /// soon as the checker flips.
     private var hasUpdate: Bool {
         if case .available = updateChecker.status { return true }
         return false

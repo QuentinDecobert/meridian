@@ -241,9 +241,14 @@ struct MeridianMenuBarBitmap: View {
     /// Horizontal gap between icon and text, in points. Matches the proto's
     /// `.actual { gap: 6px }`.
     var spacing: CGFloat = 6
-    /// When `true`, a small blue pip is drawn in the top-right corner of the
-    /// arc icon. Static (no animation) per macOS menu-bar conventions.
+    /// When `true`, a small blue pip is drawn **after** the text with a ~4 pt
+    /// gap. Static (no animation) per macOS menu-bar conventions. Sits on the
+    /// right edge of the label so the arc icon itself stays a clean silhouette
+    /// — the pip semantically belongs to the whole label, not to the quota.
     var hasUpdate: Bool = false
+    /// Gap between the text and the update pip. Slightly tighter than the
+    /// icon/text gap so the pip reads as "attached" to the label.
+    var pipLeadingGap: CGFloat = 4
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -267,33 +272,35 @@ struct MeridianMenuBarBitmap: View {
         //     the cap-line; `.center` balances arc-mass and x-height mass
         //     without manual padding, matching the proto's flex `align-items:
         //     center`.
+        //
+        // Layout is [arc-icon] [text] [pip]. The pip is flattened into the
+        // same NSImage as the rest of the label — `MenuBarExtra(label:)`
+        // reassembles loose Image/Text pairs with its own spacing (see the
+        // class-level docstring), so we keep everything in one bitmap.
         let update = hasUpdate
-        let content = HStack(alignment: .center, spacing: spacing) {
-            ZStack(alignment: .topTrailing) {
-                MeridianArcIcon(status: status, fraction: fraction)
-                    .frame(width: 14, height: 10)
-                if update {
-                    // 6 pt outer ring (dark) + 4 pt inner pip (update blue) —
-                    // matches `designs/update-indicator.html` § 01. Dark ring
-                    // preserves contrast against bright menu-bar wallpapers
-                    // and compensates for SF / macOS auto-dimming of tray
-                    // content.
-                    UpdatePip()
-                        // Nudge 2 pt up/right so the pip sits cleanly outside
-                        // the 14×10 arc box rather than clipping its corner.
-                        .offset(x: 2, y: -2)
-                }
-            }
+        let content = HStack(alignment: .center, spacing: 0) {
+            MeridianArcIcon(status: status, fraction: fraction)
+                .frame(width: 14, height: 10)
+                .padding(.trailing, spacing)
+
             Text(text)
                 .font(.custom("JetBrainsMono-Medium", size: 11))
                 .tracking(0.44) // = .04em at 11 pt, matches proto `.actual`
                 .monospacedDigit()
                 .foregroundStyle(textColor)
                 .fixedSize()
+
+            if update {
+                // 6 pt solid pip with a 1 pt dark ring so it survives on
+                // bright wallpapers. Placed after the text — see the
+                // `designs/update-indicator.html` § 01 reference, translated
+                // from icon-corner to end-of-label per product decision.
+                UpdatePip()
+                    .padding(.leading, pipLeadingGap)
+            }
         }
         .environment(\.colorScheme, colorScheme)
         .padding(.vertical, 2) // breathing room so descenders are not clipped
-        .padding(.top, update ? 2 : 0) // extra room for the pip
 
         let renderer = ImageRenderer(content: content)
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
@@ -310,8 +317,9 @@ struct MeridianMenuBarBitmap: View {
 /// stays visible on both light and dark menu-bar backgrounds.
 ///
 /// Static by design (no animation): menu-bar indicators should not distract.
-/// Used inside `MeridianMenuBarBitmap` (flattened into the tray NSImage) and
-/// — one day — in any other tiny "new stuff here" context that needs it.
+/// Used inside `MeridianMenuBarBitmap` at the **end of the label** (flattened
+/// into the tray NSImage) and — one day — in any other tiny "new stuff here"
+/// context that needs it.
 struct UpdatePip: View {
     var body: some View {
         Circle()
