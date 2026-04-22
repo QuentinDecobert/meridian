@@ -71,6 +71,12 @@ struct APIUsagePanel: View {
                         .font(FlightDeckType.hero)
                         .foregroundStyle(MeridianColors.ink)
                         .shadow(color: Color(hex: 0x96B4D2, alpha: 0.12), radius: 12, x: 0, y: 0)
+                        // Never truncate : a user misreading $147 as $14 because
+                        // of a trailing ellipsis is a far worse outcome than a
+                        // slightly smaller hero. Scale down progressively as
+                        // the value grows instead of clipping.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.45)
                 }
                 Spacer(minLength: 8)
                 Text("MO-TO-DATE")
