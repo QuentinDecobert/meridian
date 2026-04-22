@@ -402,11 +402,10 @@ struct MeridianArcLabel: View {
     }
 
     private var labelColor: Color {
-        switch status {
-        case .watch:    return MeridianColors.amber
-        case .critical: return MeridianColors.red
-        default:        return .primary
-        }
+        // The arc icon already carries the status color — colouring the text
+        // too would double the signal and make long menu-bar strings read as
+        // "alarm" when they're just informational. Keep the text neutral.
+        .primary
     }
 }
 

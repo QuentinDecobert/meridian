@@ -24,8 +24,8 @@ final class TimeFormatterTests: XCTestCase {
     }
 
     func testDaysBranch() {
-        XCTAssertEqual(TimeFormatter.compact(timeInterval: 24 * 3600), "1 d")
-        XCTAssertEqual(TimeFormatter.compact(timeInterval: 3 * 24 * 3600), "3 d")
+        XCTAssertEqual(TimeFormatter.compact(timeInterval: 24 * 3600), "1d")
+        XCTAssertEqual(TimeFormatter.compact(timeInterval: 3 * 24 * 3600), "3d")
     }
 }
 
