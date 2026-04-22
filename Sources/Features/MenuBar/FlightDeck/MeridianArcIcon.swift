@@ -407,8 +407,8 @@ private struct IconPreviewState {
 }
 
 private let previewStates: [IconPreviewState] = [
-    .init(status: .unused,   fraction: 0.00, percent: "0%",  time: "4h56", caption: "Unused"),
-    .init(status: .serene,   fraction: 0.27, percent: "27%", time: "2h14", caption: "Serene"),
-    .init(status: .watch,    fraction: 0.64, percent: "64%", time: "1h02", caption: "Watch"),
-    .init(status: .critical, fraction: 0.92, percent: "92%", time: "18m",  caption: "Critical"),
+    .init(status: .unused,   fraction: 0.00, percent: "0%",  time: "4h56", caption: "Idle"),
+    .init(status: .serene,   fraction: 0.27, percent: "27%", time: "2h14", caption: "Cruise"),
+    .init(status: .watch,    fraction: 0.64, percent: "64%", time: "1h02", caption: "Climb"),
+    .init(status: .critical, fraction: 0.92, percent: "92%", time: "18m",  caption: "Peak"),
 ]

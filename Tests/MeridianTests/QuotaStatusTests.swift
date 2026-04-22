@@ -14,7 +14,7 @@ final class QuotaStatusTests: XCTestCase {
     }
 
     func testJustAboveZeroIsSerene() {
-        // 0.6 rounds to 1 → serene (spec : "1-49 % = serein")
+        // 0.6 rounds to 1 → serene (spec : "1-49 % = cruise")
         XCTAssertEqual(QuotaStatus.from(percent: 0.6), .serene)
         XCTAssertEqual(QuotaStatus.from(percent: 1), .serene)
         XCTAssertEqual(QuotaStatus.from(percent: 27), .serene)
@@ -26,7 +26,7 @@ final class QuotaStatusTests: XCTestCase {
     }
 
     func testHalfwayEscalatesToWatch() {
-        // 49.6 rounds to 50 → watch
+        // 49.6 rounds to 50 → climb
         XCTAssertEqual(QuotaStatus.from(percent: 49.6), .watch)
         XCTAssertEqual(QuotaStatus.from(percent: 50), .watch)
         XCTAssertEqual(QuotaStatus.from(percent: 64), .watch)
@@ -51,5 +51,16 @@ final class QuotaStatusTests: XCTestCase {
         for status in QuotaStatus.allCases {
             XCTAssertFalse(status.label.isEmpty, "status \(status) has empty label")
         }
+    }
+
+    // Flight-trajectory lexicon — locks the user-facing wording to the
+    // cockpit metaphor (`idle · cruise · climb · peak`). Update this mapping
+    // only with explicit product validation.
+
+    func testLabelsUseFlightTrajectoryLexicon() {
+        XCTAssertEqual(QuotaStatus.unused.label,   "idle")
+        XCTAssertEqual(QuotaStatus.serene.label,   "cruise")
+        XCTAssertEqual(QuotaStatus.watch.label,    "climb")
+        XCTAssertEqual(QuotaStatus.critical.label, "peak")
     }
 }
