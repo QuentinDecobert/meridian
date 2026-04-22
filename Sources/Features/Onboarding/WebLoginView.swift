@@ -5,7 +5,7 @@ import OSLog
 private let logger = Logger(subsystem: "com.quentindecobert.meridian", category: "onboarding")
 
 struct WebLoginView: NSViewRepresentable {
-    let onCookieCaptured: @MainActor (String) -> Void
+    let onCookieCaptured: @MainActor (SessionCookie) -> Void
 
     static let loginURL = URL(string: "https://claude.ai/login")!
 
@@ -47,12 +47,12 @@ struct WebLoginView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
-        private let onCookieCaptured: @MainActor (String) -> Void
+        private let onCookieCaptured: @MainActor (SessionCookie) -> Void
         private var didCapture = false
         private var urlObservation: NSKeyValueObservation?
         private weak var webView: WKWebView?
 
-        init(onCookieCaptured: @escaping @MainActor (String) -> Void) {
+        init(onCookieCaptured: @escaping @MainActor (SessionCookie) -> Void) {
             self.onCookieCaptured = onCookieCaptured
             super.init()
         }
@@ -116,7 +116,7 @@ struct WebLoginView: NSViewRepresentable {
             let header = claudeCookies
                 .map { "\($0.name)=\($0.value)" }
                 .joined(separator: "; ")
-            onCookieCaptured(header)
+            onCookieCaptured(SessionCookie(header))
         }
     }
 }

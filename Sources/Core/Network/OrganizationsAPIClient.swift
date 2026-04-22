@@ -1,7 +1,7 @@
 import Foundation
 
 protocol OrganizationsFetching: Sendable {
-    func fetchOrganizations(cookie: String) async throws -> [Organization]
+    func fetchOrganizations(cookie: SessionCookie) async throws -> [Organization]
 }
 
 struct OrganizationsAPIClient: OrganizationsFetching {
@@ -13,7 +13,7 @@ struct OrganizationsAPIClient: OrganizationsFetching {
         self.apiClient = apiClient
     }
 
-    func fetchOrganizations(cookie: String) async throws -> [Organization] {
+    func fetchOrganizations(cookie: SessionCookie) async throws -> [Organization] {
         try await apiClient.get(Self.endpoint, cookie: cookie)
     }
 }

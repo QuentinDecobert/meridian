@@ -1,7 +1,7 @@
 import Foundation
 
 protocol UsageFetching: Sendable {
-    func fetchUsage(organizationUUID: String, cookie: String) async throws -> UsageResponse
+    func fetchUsage(organizationUUID: String, cookie: SessionCookie) async throws -> UsageResponse
 }
 
 struct UsageAPIClient: UsageFetching {
@@ -11,7 +11,7 @@ struct UsageAPIClient: UsageFetching {
         self.apiClient = apiClient
     }
 
-    func fetchUsage(organizationUUID: String, cookie: String) async throws -> UsageResponse {
+    func fetchUsage(organizationUUID: String, cookie: SessionCookie) async throws -> UsageResponse {
         let url = URL(string: "https://claude.ai/api/organizations/\(organizationUUID)/usage")!
         return try await apiClient.get(url, cookie: cookie)
     }

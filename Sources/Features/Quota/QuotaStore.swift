@@ -85,7 +85,7 @@ final class QuotaStore: ObservableObject {
         do {
             let response = try await usageClient.fetchUsage(
                 organizationUUID: session.organizationUUID,
-                cookie: session.cookie
+                cookie: SessionCookie(session.cookie)
             )
             let quota = Quota(from: response)
             state = .loaded(quota)

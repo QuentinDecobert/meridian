@@ -35,7 +35,7 @@ final class OnboardingCoordinator: ObservableObject {
         state = .intro
     }
 
-    func handleCapturedCookie(_ cookie: String) async {
+    func handleCapturedCookie(_ cookie: SessionCookie) async {
         state = .processing
 
         do {
@@ -46,7 +46,7 @@ final class OnboardingCoordinator: ObservableObject {
                 return
             }
 
-            let session = Session(cookie: cookie, organizationUUID: chatOrg.uuid)
+            let session = Session(cookie: cookie.rawValue, organizationUUID: chatOrg.uuid)
             try sessionStore.save(session)
             state = .success
         } catch let apiError as APIError {

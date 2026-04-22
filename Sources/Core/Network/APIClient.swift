@@ -1,7 +1,7 @@
 import Foundation
 
 protocol APIClient: Sendable {
-    func get<T: Decodable & Sendable>(_ url: URL, cookie: String) async throws -> T
+    func get<T: Decodable & Sendable>(_ url: URL, cookie: SessionCookie) async throws -> T
 }
 
 enum APIError: Error {
@@ -44,10 +44,13 @@ struct URLSessionAPIClient: APIClient {
         self.decoder = decoder
     }
 
-    func get<T: Decodable & Sendable>(_ url: URL, cookie: String) async throws -> T {
+    func get<T: Decodable & Sendable>(_ url: URL, cookie: SessionCookie) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        // `rawValue` is the one and only place where the secret leaves the
+        // opaque wrapper, kept tightly scoped to the HTTP send site
+        // (MER-SEC-005).
+        request.setValue(cookie.rawValue, forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("web_claude_ai", forHTTPHeaderField: "anthropic-client-platform")
 
