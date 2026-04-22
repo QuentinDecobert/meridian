@@ -3,17 +3,24 @@ import OSLog
 
 private let updateLogger = Logger(subsystem: "com.quentindecobert.meridian", category: "updates")
 
-/// Polls GitHub for new commits on `main` and publishes an `UpdateStatus`.
+/// Polls GitHub for the latest published release and publishes an
+/// `UpdateStatus`.
 ///
 /// The check is deliberately soft: any error (rate limit, transport failure,
-/// unknown SHA after a force-push) is logged at `.debug` and swallowed —
-/// `status` only ever moves between `.upToDate`, `.available(...)` or the
-/// initial `.unknown`. No user-visible noise on failure.
+/// unknown SHA after a force-push, 404 on `/releases/latest` when no release
+/// exists yet) is logged at `.debug` and swallowed — `status` only ever moves
+/// between `.upToDate`, `.available(...)` or the initial `.unknown`. No
+/// user-visible noise on failure.
 ///
 /// `localSHA` is read from the app's Info.plist (`MeridianBuildSHA` — see
 /// `postCompileScripts` in `project.yml`). When that key is empty (dev builds
 /// without git, source zips), the checker refuses to start — nothing to
 /// compare against.
+///
+/// The source of truth is `GET /repos/{repo}/releases/latest`: we compare the
+/// local build SHA against the commit the tag resolves to. This means users
+/// only see an "update available" signal when the maintainer has actually cut
+/// a release — commits on `main` between two tags no longer trigger the chip.
 @MainActor
 final class UpdateChecker: ObservableObject {
     /// Current status — `@Published` so SwiftUI views can observe it.
@@ -80,15 +87,24 @@ final class UpdateChecker: ObservableObject {
     func checkOnce() async {
         guard let localSHA else { return }
 
-        let remoteSHA: String
+        let release: LatestRelease
         do {
-            remoteSHA = try await client.fetchLatestMainSHA()
+            release = try await client.fetchLatestRelease()
+        } catch GitHubUpdateError.notFound {
+            // No release published yet. Keep the status `.unknown` — we do
+            // NOT fall back to comparing against `main`, otherwise every
+            // commit on `main` would flip the chip on.
+            updateLogger.debug("No published release yet — update check inactive.")
+            status = .unknown
+            return
         } catch {
-            updateLogger.debug("fetchLatestMainSHA failed: \(String(describing: error), privacy: .public)")
+            updateLogger.debug("fetchLatestRelease failed: \(String(describing: error), privacy: .public)")
             return
         }
 
-        if remoteSHA == localSHA {
+        let remoteVersion = Self.stripLeadingV(release.tagName)
+
+        if release.commitSHA == localSHA {
             status = .upToDate
             return
         }
@@ -97,16 +113,23 @@ final class UpdateChecker: ObservableObject {
         // update is available, just not how many commits ahead.
         var ahead = 0
         do {
-            ahead = try await client.fetchAheadBy(localSHA: localSHA)
+            ahead = try await client.fetchAheadBy(
+                base: localSHA,
+                head: release.commitSHA
+            )
         } catch {
             updateLogger.debug("fetchAheadBy failed: \(String(describing: error), privacy: .public)")
         }
 
-        // `ahead == 0` with different SHAs means `main` was force-pushed to a
-        // branch that no longer contains our build — still an "update
-        // available" situation, we just can't count commits. UI handles `0`
-        // gracefully ("new commits since your build" without the count).
-        status = .available(remoteSHA: remoteSHA, ahead: ahead, remoteVersion: nil)
+        // `ahead == 0` with different SHAs is rare but possible (the tag
+        // points at a commit the local build doesn't contain, yet the
+        // compare call counts no commits between them — e.g. local SHA on a
+        // stale branch). Still an "update available" situation.
+        status = .available(
+            remoteSHA: release.commitSHA,
+            ahead: ahead,
+            remoteVersion: remoteVersion
+        )
     }
 
     // MARK: - Info.plist helper
@@ -115,5 +138,12 @@ final class UpdateChecker: ObservableObject {
     /// by `postCompileScripts` — empty when git is unavailable (source zip).
     static func readBuildSHA() -> String? {
         Bundle.main.object(forInfoDictionaryKey: "MeridianBuildSHA") as? String
+    }
+
+    /// Drop a single leading `v` / `V` from a tag name so `v0.2.0` becomes
+    /// `0.2.0`. Untouched tags like `1.0` pass through unchanged.
+    static func stripLeadingV(_ tag: String) -> String {
+        guard let first = tag.first, first == "v" || first == "V" else { return tag }
+        return String(tag.dropFirst())
     }
 }

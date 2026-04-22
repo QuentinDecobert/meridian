@@ -8,37 +8,80 @@ final class GitHubUpdateClientTests: XCTestCase {
 
     override func tearDown() {
         MockURLProtocol.handler = nil
+        MockURLProtocol.sequentialHandlers = nil
         super.tearDown()
     }
 
-    func testFetchLatestMainSHAParsesCommitResponse() async throws {
-        MockURLProtocol.handler = { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.absoluteString,
-                           "https://api.github.com/repos/QuentinDecobert/meridian/commits/main")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"),
-                           "application/vnd.github+json")
-            let body = Data(#"{"sha":"abc123def456","commit":{"message":"chore"}}"#.utf8)
-            return (Self.ok200, body)
-        }
+    func testFetchLatestReleaseChainsReleaseAndCommitCalls() async throws {
+        // `fetchLatestRelease` makes two calls in order:
+        //  1. GET /releases/latest  → tag_name
+        //  2. GET /commits/{tag}    → sha  (works for lightweight & annotated tags)
+        MockURLProtocol.sequentialHandlers = [
+            { request in
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(
+                    request.url?.absoluteString,
+                    "https://api.github.com/repos/QuentinDecobert/meridian/releases/latest"
+                )
+                XCTAssertEqual(
+                    request.value(forHTTPHeaderField: "Accept"),
+                    "application/vnd.github+json"
+                )
+                let body = Data(#"{"tag_name":"v0.2.0","name":"v0.2.0","draft":false}"#.utf8)
+                return (Self.ok200(for: request), body)
+            },
+            { request in
+                XCTAssertEqual(
+                    request.url?.absoluteString,
+                    "https://api.github.com/repos/QuentinDecobert/meridian/commits/v0.2.0"
+                )
+                let body = Data(#"{"sha":"tagcommitSHA","commit":{"message":"chore(release): v0.2.0"}}"#.utf8)
+                return (Self.ok200(for: request), body)
+            }
+        ]
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
-        let sha = try await client.fetchLatestMainSHA()
-        XCTAssertEqual(sha, "abc123def456")
+        let release = try await client.fetchLatestRelease()
+        XCTAssertEqual(release.tagName, "v0.2.0")
+        XCTAssertEqual(release.commitSHA, "tagcommitSHA")
     }
 
-    func testFetchAheadByParsesCompareResponse() async throws {
+    func testFetchLatestReleaseMapsMissingReleaseTo404() async {
+        // When no release has been published yet, GitHub returns 404. That
+        // path must flow through as `.notFound` so the checker can map it
+        // to `.unknown`.
+        MockURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(#"{"message":"Not Found"}"#.utf8))
+        }
+        let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
+        do {
+            _ = try await client.fetchLatestRelease()
+            XCTFail("Expected notFound")
+        } catch let error as GitHubUpdateError {
+            XCTAssertEqual(error, .notFound)
+        } catch {
+            XCTFail("Expected GitHubUpdateError, got \(error)")
+        }
+    }
+
+    func testFetchAheadByParsesCompareResponseForTagHead() async throws {
         MockURLProtocol.handler = { request in
             XCTAssertEqual(
                 request.url?.absoluteString,
-                "https://api.github.com/repos/QuentinDecobert/meridian/compare/oldSHA...main"
+                "https://api.github.com/repos/QuentinDecobert/meridian/compare/oldSHA...tagSHA"
             )
             let body = Data(#"{"ahead_by":7,"behind_by":0,"status":"ahead"}"#.utf8)
-            return (Self.ok200, body)
+            return (Self.ok200(for: request), body)
         }
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
-        let ahead = try await client.fetchAheadBy(localSHA: "oldSHA")
+        let ahead = try await client.fetchAheadBy(base: "oldSHA", head: "tagSHA")
         XCTAssertEqual(ahead, 7)
     }
 
@@ -55,7 +98,7 @@ final class GitHubUpdateClientTests: XCTestCase {
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
         do {
-            _ = try await client.fetchLatestMainSHA()
+            _ = try await client.fetchLatestRelease()
             XCTFail("Expected rateLimited")
         } catch let error as GitHubUpdateError {
             XCTAssertEqual(error, .rateLimited)
@@ -64,7 +107,7 @@ final class GitHubUpdateClientTests: XCTestCase {
         }
     }
 
-    func testNotFoundMapsToNotFoundError() async {
+    func testCompareNotFoundMapsToNotFoundError() async {
         MockURLProtocol.handler = { request in
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -77,7 +120,7 @@ final class GitHubUpdateClientTests: XCTestCase {
 
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
         do {
-            _ = try await client.fetchAheadBy(localSHA: "forcePushedSHA")
+            _ = try await client.fetchAheadBy(base: "forcePushedSHA", head: "tagSHA")
             XCTFail("Expected notFound")
         } catch let error as GitHubUpdateError {
             XCTAssertEqual(error, .notFound)
@@ -92,7 +135,7 @@ final class GitHubUpdateClientTests: XCTestCase {
         }
         let client = GitHubUpdateClient(urlSession: Self.makeStubbedSession())
         do {
-            _ = try await client.fetchLatestMainSHA()
+            _ = try await client.fetchLatestRelease()
             XCTFail("Expected decoding")
         } catch let error as GitHubUpdateError {
             XCTAssertEqual(error, .decoding)
@@ -109,15 +152,6 @@ final class GitHubUpdateClientTests: XCTestCase {
         return URLSession(configuration: config)
     }
 
-    private static let ok200: HTTPURLResponse = {
-        HTTPURLResponse(
-            url: URL(string: "https://api.github.com/")!,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        )!
-    }()
-
     private static func ok200(for request: URLRequest) -> HTTPURLResponse {
         HTTPURLResponse(
             url: request.url!,
@@ -132,21 +166,37 @@ final class GitHubUpdateClientTests: XCTestCase {
 /// closure. The closure returns the `(HTTPURLResponse, Data)` pair that the
 /// session will deliver back to the caller.
 ///
-/// The handler is statically stored because `URLProtocol` is instantiated by
-/// Foundation — instances get no reference back to the test. Set it in
-/// `setUp` / the test, clear it in `tearDown`.
+/// Two modes :
+///   · `handler`              — one closure, used for every request (the
+///                              common case).
+///   · `sequentialHandlers`   — an ordered list consumed one entry per call
+///                              (for tests that issue multiple requests and
+///                              want to assert each in turn). When non-nil,
+///                              this takes precedence over `handler`.
+///
+/// Both are statically stored because `URLProtocol` is instantiated by
+/// Foundation — instances get no reference back to the test. Set them in
+/// `setUp` / the test, clear them in `tearDown`.
 final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler: ((URLRequest) -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var sequentialHandlers: [(URLRequest) -> (HTTPURLResponse, Data)]?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let handler = MockURLProtocol.handler else {
+        let resolved: ((URLRequest) -> (HTTPURLResponse, Data))?
+        if var queue = MockURLProtocol.sequentialHandlers, !queue.isEmpty {
+            resolved = queue.removeFirst()
+            MockURLProtocol.sequentialHandlers = queue
+        } else {
+            resolved = MockURLProtocol.handler
+        }
+        guard let resolved else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let (response, data) = handler(request)
+        let (response, data) = resolved(request)
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

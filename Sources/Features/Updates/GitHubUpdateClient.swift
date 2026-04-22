@@ -3,12 +3,25 @@ import Foundation
 /// Protocol fetched by `UpdateChecker`. Enables injection of stubs for tests
 /// without pulling in a full `URLProtocol` harness.
 protocol GitHubFetching: Sendable {
-    /// Fetch the SHA of the tip of `main`.
-    func fetchLatestMainSHA() async throws -> String
+    /// Fetch the latest published release — its tag (e.g. `v0.2.0`) and the
+    /// commit SHA the tag resolves to. Throws `.notFound` when the repository
+    /// has no published release yet.
+    func fetchLatestRelease() async throws -> LatestRelease
 
-    /// Fetch how many commits `main` is ahead of `localSHA`. Returns 0 if the
-    /// two refs point at the same commit.
-    func fetchAheadBy(localSHA: String) async throws -> Int
+    /// Fetch how many commits `head` is ahead of `base`. Returns 0 if the two
+    /// refs point at the same commit.
+    func fetchAheadBy(base: String, head: String) async throws -> Int
+}
+
+/// Pair returned by `fetchLatestRelease`: the marketing tag (verbatim, kept
+/// with its leading `v` so callers decide how to display it) and the commit
+/// SHA the tag points at. We resolve the commit SHA via `/commits/{tag}` which
+/// handles both lightweight and annotated tags in a single call.
+struct LatestRelease: Equatable, Sendable {
+    /// Raw tag name, e.g. `v0.2.0`.
+    let tagName: String
+    /// Commit SHA the tag resolves to, e.g. `abc1234...`.
+    let commitSHA: String
 }
 
 /// Narrow, typed error surface for the update checker. Everything that goes
@@ -49,20 +62,35 @@ struct GitHubUpdateClient: GitHubFetching {
         self.decoder = decoder
     }
 
-    func fetchLatestMainSHA() async throws -> String {
-        let url = URL(string: "https://api.github.com/repos/\(Self.repository)/commits/main")!
-        let payload: CommitResponse = try await get(url: url)
-        return payload.sha
+    func fetchLatestRelease() async throws -> LatestRelease {
+        // Step 1 — find the latest release and its tag name. 404 here is a
+        // valid signal ("no release published yet") and propagates verbatim.
+        let releaseURL = URL(string: "https://api.github.com/repos/\(Self.repository)/releases/latest")!
+        let release: ReleaseResponse = try await get(url: releaseURL)
+
+        // Step 2 — resolve the tag to a commit SHA. `GET /commits/{ref}`
+        // collapses lightweight vs annotated tags into a single call: GitHub
+        // follows the tag object chain and returns the final commit.
+        let encodedTag = release.tag_name.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? release.tag_name
+        let commitURL = URL(string: "https://api.github.com/repos/\(Self.repository)/commits/\(encodedTag)")!
+        let commit: CommitResponse = try await get(url: commitURL)
+
+        return LatestRelease(tagName: release.tag_name, commitSHA: commit.sha)
     }
 
-    func fetchAheadBy(localSHA: String) async throws -> Int {
-        // `compare/{base}...{head}` — with head = main. `ahead_by` = commits on
-        // main not reachable from base. Safe against force-pushes: a SHA that
-        // GitHub no longer knows about yields a 404 (mapped to `.notFound`).
-        let encodedBase = localSHA.addingPercentEncoding(
+    func fetchAheadBy(base: String, head: String) async throws -> Int {
+        // `compare/{base}...{head}` — `ahead_by` = commits on `head` not
+        // reachable from `base`. Safe against force-pushes: a SHA that GitHub
+        // no longer knows about yields a 404 (mapped to `.notFound`).
+        let encodedBase = base.addingPercentEncoding(
             withAllowedCharacters: .urlPathAllowed
-        ) ?? localSHA
-        let url = URL(string: "https://api.github.com/repos/\(Self.repository)/compare/\(encodedBase)...main")!
+        ) ?? base
+        let encodedHead = head.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? head
+        let url = URL(string: "https://api.github.com/repos/\(Self.repository)/compare/\(encodedBase)...\(encodedHead)")!
         let payload: CompareResponse = try await get(url: url)
         return payload.ahead_by
     }
@@ -106,6 +134,14 @@ struct GitHubUpdateClient: GitHubFetching {
 }
 
 // MARK: - Wire types
+
+/// Subset of the `GET /repos/:owner/:repo/releases/latest` response. Only the
+/// marketing tag matters — the release body, author, timestamps and assets are
+/// all unused by the update checker.
+// swiftlint:disable:next identifier_name
+private struct ReleaseResponse: Decodable {
+    let tag_name: String
+}
 
 /// Subset of the `GET /repos/:owner/:repo/commits/:ref` response. Only the
 /// `sha` is needed — ignore everything else.

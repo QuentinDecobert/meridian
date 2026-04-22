@@ -13,7 +13,7 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testSameSHAResolvesToUpToDate() async {
         let stub = StubGitHub(
-            mainSHA: .success("abc123"),
+            release: .success(LatestRelease(tagName: "v0.1.4", commitSHA: "abc123")),
             aheadBy: .success(0)
         )
         let checker = UpdateChecker(
@@ -26,9 +26,9 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(checker.status, .upToDate)
     }
 
-    func testDifferentSHAResolvesToAvailableWithAheadCount() async {
+    func testDifferentSHAResolvesToAvailableWithVersionAndAheadCount() async {
         let stub = StubGitHub(
-            mainSHA: .success("newSHA456"),
+            release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "newSHA456")),
             aheadBy: .success(3)
         )
         let checker = UpdateChecker(
@@ -40,16 +40,36 @@ final class UpdateCheckerTests: XCTestCase {
         await checker.checkOnce()
         XCTAssertEqual(
             checker.status,
-            .available(remoteSHA: "newSHA456", ahead: 3, remoteVersion: nil)
+            .available(remoteSHA: "newSHA456", ahead: 3, remoteVersion: "0.2.0")
+        )
+    }
+
+    func testTagWithoutLeadingVIsPreservedVerbatim() async {
+        // `0.2.0` (no leading v) stays as-is — the stripper only takes ONE
+        // leading v off.
+        let stub = StubGitHub(
+            release: .success(LatestRelease(tagName: "0.2.0", commitSHA: "newSHA")),
+            aheadBy: .success(1)
+        )
+        let checker = UpdateChecker(
+            client: stub,
+            localSHA: "oldSHA",
+            pollInterval: 3600,
+            initialDelay: 0
+        )
+        await checker.checkOnce()
+        XCTAssertEqual(
+            checker.status,
+            .available(remoteSHA: "newSHA", ahead: 1, remoteVersion: "0.2.0")
         )
     }
 
     func testAvailableWhenCompareFailsStillReportsUpdateWithZeroAhead() async {
-        // If the commits/main call succeeds but compare 404s (force push,
+        // If `/releases/latest` succeeds but `/compare` 404s (force push,
         // unreachable base), we still know an update is available — we just
         // can't count commits.
         let stub = StubGitHub(
-            mainSHA: .success("newSHA"),
+            release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "newSHA")),
             aheadBy: .failure(GitHubUpdateError.notFound)
         )
         let checker = UpdateChecker(
@@ -61,13 +81,16 @@ final class UpdateCheckerTests: XCTestCase {
         await checker.checkOnce()
         XCTAssertEqual(
             checker.status,
-            .available(remoteSHA: "newSHA", ahead: 0, remoteVersion: nil)
+            .available(remoteSHA: "newSHA", ahead: 0, remoteVersion: "0.2.0")
         )
     }
 
-    func testMainFetchFailureKeepsStatusUnchanged() async {
+    func testReleaseFetchFailureKeepsStatusUnchanged() async {
+        // Transient failure (rate limit, transport) must NOT clobber the
+        // pre-seeded status — we keep whatever the last successful check
+        // established.
         let stub = StubGitHub(
-            mainSHA: .failure(GitHubUpdateError.rateLimited),
+            release: .failure(GitHubUpdateError.rateLimited),
             aheadBy: .success(0)
         )
         let checker = UpdateChecker(
@@ -76,7 +99,24 @@ final class UpdateCheckerTests: XCTestCase {
             pollInterval: 3600,
             initialDelay: 0
         )
-        // Pre-seeded status should not be clobbered by a failed check.
+        await checker.checkOnce()
+        XCTAssertEqual(checker.status, .unknown)
+    }
+
+    func testMissingReleaseResolvesToUnknown() async {
+        // 404 on `/releases/latest` → no release has been cut yet. We
+        // explicitly set `.unknown` so the UI hides chip + pip. This must
+        // NOT fall back to comparing against `main`.
+        let stub = StubGitHub(
+            release: .failure(GitHubUpdateError.notFound),
+            aheadBy: .success(0)
+        )
+        let checker = UpdateChecker(
+            client: stub,
+            localSHA: "abc123",
+            pollInterval: 3600,
+            initialDelay: 0
+        )
         await checker.checkOnce()
         XCTAssertEqual(checker.status, .unknown)
     }
@@ -107,6 +147,16 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(checker.status, .unknown)
     }
 
+    // MARK: - Tag parsing
+
+    func testStripLeadingVHandlesBothCases() {
+        XCTAssertEqual(UpdateChecker.stripLeadingV("v0.2.0"), "0.2.0")
+        XCTAssertEqual(UpdateChecker.stripLeadingV("V0.2.0"), "0.2.0")
+        XCTAssertEqual(UpdateChecker.stripLeadingV("0.2.0"), "0.2.0")
+        XCTAssertEqual(UpdateChecker.stripLeadingV("v"), "")
+        XCTAssertEqual(UpdateChecker.stripLeadingV(""), "")
+    }
+
     // MARK: - UpdateStatus Equatable
 
     func testUpdateStatusEquatableAcrossAssociatedValues() {
@@ -130,14 +180,14 @@ final class UpdateCheckerTests: XCTestCase {
 /// `Result` — no ordering tracking, no side effects. `Sendable` because the
 /// tests are `@MainActor` and the checker hops off to await the stub.
 private struct StubGitHub: GitHubFetching {
-    let mainSHA: Result<String, GitHubUpdateError>
+    let release: Result<LatestRelease, GitHubUpdateError>
     let aheadBy: Result<Int, GitHubUpdateError>
 
-    func fetchLatestMainSHA() async throws -> String {
-        try mainSHA.get()
+    func fetchLatestRelease() async throws -> LatestRelease {
+        try release.get()
     }
 
-    func fetchAheadBy(localSHA: String) async throws -> Int {
+    func fetchAheadBy(base: String, head: String) async throws -> Int {
         try aheadBy.get()
     }
 }
@@ -145,11 +195,11 @@ private struct StubGitHub: GitHubFetching {
 /// Hostile stub — any call to the network layer is a test failure. Used to
 /// prove the short-circuit paths (empty local SHA) don't even try.
 private struct ExplodingGitHub: GitHubFetching {
-    func fetchLatestMainSHA() async throws -> String {
-        XCTFail("fetchLatestMainSHA must not be called when local SHA is absent")
+    func fetchLatestRelease() async throws -> LatestRelease {
+        XCTFail("fetchLatestRelease must not be called when local SHA is absent")
         throw GitHubUpdateError.invalidResponse
     }
-    func fetchAheadBy(localSHA: String) async throws -> Int {
+    func fetchAheadBy(base: String, head: String) async throws -> Int {
         XCTFail("fetchAheadBy must not be called when local SHA is absent")
         throw GitHubUpdateError.invalidResponse
     }
