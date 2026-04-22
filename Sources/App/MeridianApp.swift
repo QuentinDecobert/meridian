@@ -51,7 +51,15 @@ struct MeridianApp: App {
         .windowResizability(.contentSize)
 
         Window("Settings", id: "settings") {
+#if DEBUG
+            SettingsView(
+                preferences: preferences,
+                quotaStore: quotaStore,
+                statusChecker: statusChecker
+            )
+#else
             SettingsView(preferences: preferences, quotaStore: quotaStore)
+#endif
         }
         .windowResizability(.contentSize)
     }

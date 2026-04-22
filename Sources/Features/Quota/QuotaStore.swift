@@ -33,6 +33,15 @@ final class QuotaStore: ObservableObject {
     private var consecutive429: Int = 0
     private var nextAllowedRefresh: Date?
 
+#if DEBUG
+    /// Debug-only flag. When `true`, `state` is pinned to
+    /// `.error("Debug mock")` and every refresh attempt is a no-op so the
+    /// UI stays frozen on the error shell / bonus-wire branch for visual QA.
+    /// Flip back to `false` via `debugForceError(false)` to rejoin the
+    /// normal refresh flow.
+    private var debugForcedError: Bool = false
+#endif
+
     private let staleThreshold: TimeInterval = 15 * 60   // 15 min
     private let failureTolerance = 3
     private let minRefreshInterval: TimeInterval = 10    // dedup triggers < 10s apart
@@ -52,6 +61,9 @@ final class QuotaStore: ObservableObject {
     /// Background / automatic trigger. Respects the `nextAllowedRefresh`
     /// backoff computed from rate-limit responses.
     func refreshIfNeeded() async {
+#if DEBUG
+        if debugForcedError { return }
+#endif
         guard !isRefreshing else { return }
         if let next = nextAllowedRefresh, Date.now < next { return }
         if let last = lastSuccessfulRefreshAt,
@@ -63,6 +75,12 @@ final class QuotaStore: ObservableObject {
     /// is never blocked from trying again — if the server 429s again, the
     /// counter simply increments and backoff extends.
     func refresh() async {
+#if DEBUG
+        // Swallow refreshes while the debug flag is set — otherwise a
+        // concurrent popover open would flip the mock error back to
+        // `.loaded`.
+        if debugForcedError { return }
+#endif
         isRefreshing = true
         defer { isRefreshing = false }
 
@@ -170,6 +188,28 @@ final class QuotaStore: ObservableObject {
         let n = max(0, consecutive429 - 1)
         return min(60 * pow(2.0, Double(n)), 600)
     }
+
+#if DEBUG
+    /// Debug-only toggle for visual QA. `true` pins `state` to
+    /// `.error("Debug mock")` and makes every subsequent refresh a no-op
+    /// until the flag is cleared. `false` restores the normal flow and
+    /// kicks off an immediate `refresh()` so the UI returns to real data.
+    ///
+    /// Intended to be called from the Settings "Debug" panel only.
+    func debugForceError(_ enabled: Bool) {
+        debugForcedError = enabled
+        if enabled {
+            state = .error("Debug mock")
+            hasTransientError = false
+            isRefreshing = false
+        } else {
+            // Let the normal flow take over again.
+            Task { @MainActor [weak self] in
+                await self?.refresh()
+            }
+        }
+    }
+#endif
 
     private func errorState(for error: APIError) -> State {
         // Log the structured error with `privacy: .private` on any

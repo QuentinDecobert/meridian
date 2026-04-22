@@ -27,6 +27,31 @@ final class StatusChecker: ObservableObject {
     private let initialDelay: TimeInterval
     private var pollTask: Task<Void, Never>?
 
+#if DEBUG
+    /// Debug-only override. When non-`nil`, the checker cancels any running
+    /// poll, publishes this value as `status`, and turns `start()` /
+    /// `checkOnce()` into no-ops so the UI stays frozen on the mock. Setting
+    /// this back to `nil` re-enables the normal poll cycle (the next
+    /// `start()` call — or the currently-running one — will resume).
+    ///
+    /// Used from the Settings "Debug" panel to force each visual state
+    /// without waiting for a real incident on status.claude.com.
+    @Published var mockStatus: ClaudeStatus? {
+        didSet {
+            guard oldValue != mockStatus else { return }
+            if let mock = mockStatus {
+                pollTask?.cancel()
+                pollTask = nil
+                status = mock
+            } else {
+                // Leaving mock mode — relaunch the normal poll so the next
+                // cycle brings real data back.
+                start()
+            }
+        }
+    }
+#endif
+
     /// Designated initializer.
     ///
     /// - Parameters:
@@ -49,6 +74,14 @@ final class StatusChecker: ObservableObject {
     /// cancels the first task.
     func start() {
         pollTask?.cancel()
+#if DEBUG
+        // Debug override active — don't spin up a poll task that would
+        // fight with the mock value on every cycle.
+        if mockStatus != nil {
+            pollTask = nil
+            return
+        }
+#endif
         let initial = initialDelay
         let interval = pollInterval
         pollTask = Task { @MainActor [weak self] in
@@ -73,6 +106,11 @@ final class StatusChecker: ObservableObject {
     /// One-shot check. Exposed for tests and for a future "refresh status"
     /// manual action. Swallowed errors leave `status` unchanged.
     func checkOnce() async {
+#if DEBUG
+        // Debug override active — do not let a scheduled check clobber the
+        // frozen mock value.
+        if mockStatus != nil { return }
+#endif
         do {
             let result = try await client.fetchSummary()
             switch result {

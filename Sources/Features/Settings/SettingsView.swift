@@ -3,7 +3,15 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var quotaStore: QuotaStore
+#if DEBUG
+    @ObservedObject var statusChecker: StatusChecker
+#endif
     @Environment(\.openWindow) private var openWindow
+
+#if DEBUG
+    @State private var debugStatusPreset: DebugStatusMocks.Preset = .none
+    @State private var debugForceQuotaError: Bool = false
+#endif
 
     var body: some View {
         Form {
@@ -25,6 +33,12 @@ struct SettingsView: View {
             Section("claude.ai account") {
                 accountSection
             }
+
+#if DEBUG
+            Section("Debug") {
+                debugSection
+            }
+#endif
         }
         .formStyle(.grouped)
         .frame(width: 440)
@@ -34,6 +48,36 @@ struct SettingsView: View {
             preferences.syncLaunchAtLoginFromSystem()
         }
     }
+
+#if DEBUG
+    /// Debug panel for visual QA. Lets the developer force each `ClaudeStatus`
+    /// state and toggle the quota-fetch error so the bonus-wire popover can
+    /// be previewed without waiting for a real incident. Compiled out of
+    /// Release builds via `#if DEBUG`.
+    @ViewBuilder
+    private var debugSection: some View {
+        Picker("Mock Claude status", selection: $debugStatusPreset) {
+            ForEach(DebugStatusMocks.Preset.allCases) { preset in
+                Text(preset.label).tag(preset)
+            }
+        }
+        .pickerStyle(.menu)
+        .font(TypeScale.body)
+        .onChange(of: debugStatusPreset) { newValue in
+            statusChecker.mockStatus = newValue.resolve()
+        }
+
+        Toggle("Force quota fetch error", isOn: $debugForceQuotaError)
+            .font(TypeScale.body)
+            .onChange(of: debugForceQuotaError) { newValue in
+                quotaStore.debugForceError(newValue)
+            }
+
+        Text("Debug-only controls. Not visible in Release builds.")
+            .font(TypeScale.caption)
+            .foregroundStyle(SemanticColor.textSecondary)
+    }
+#endif
 
     @ViewBuilder
     private var accountSection: some View {
