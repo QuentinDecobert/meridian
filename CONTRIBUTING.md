@@ -73,21 +73,41 @@ The CI will run a build + tests on every push to the PR. Both must be green befo
 
 Releases are published manually from a maintainer's machine — no CI workflow. The `release` target in the `Makefile` handles the full cut.
 
+> **Why tagging matters.** Meridian ships an in-app update indicator that pings `GET /repos/.../releases/latest` every few hours. **If you never tag a release, no user sees any update notification — ever.** Commits pushed to `main` without a tag are invisible to the feature. So every time you ship something a user would care about (new feature, bug fix, UX tweak), cut a release.
+
+### When to cut — semver in this project
+
+| Bump  | Example         | When to use                                                                                      |
+| ----- | --------------- | ------------------------------------------------------------------------------------------------ |
+| PATCH | `0.2.0 → 0.2.1` | Bug fix, copy change, small UX tweak, security hardening with no user-visible change             |
+| MINOR | `0.2.1 → 0.3.0` | New feature, new UI surface, non-breaking behavior change                                        |
+| MAJOR | `0.3.0 → 1.0.0` | Reserved for the first Developer ID-signed/notarized release, or any breaking setup/config change |
+
+Rule of thumb : if a user running `git pull && make install` would notice the difference, cut a release.
+
+### How to cut
+
 Prerequisites : [`gh`](https://cli.github.com) (`brew install gh` then `gh auth login`) and a clean working copy on `main`.
 
 ```bash
-make release VERSION=0.2.0
+make release VERSION=0.2.1
 ```
 
 This :
 
 1. Bumps `MARKETING_VERSION` in `project.yml` and regenerates `Meridian.xcodeproj`
-2. Commits `chore(release): v0.2.0`
-3. Creates an annotated tag `v0.2.0`
+2. Commits `chore(release): v0.2.1`
+3. Creates an annotated tag `v0.2.1`
 4. Pushes the commit and the tag to `origin/main`
-5. Creates the GitHub release with auto-generated notes (`gh release create v0.2.0 --generate-notes`)
+5. Creates the GitHub release with auto-generated notes (`gh release create v0.2.1 --generate-notes`)
 
 Version numbers follow semver (`MAJOR.MINOR.PATCH`, no leading `v` — the tag adds it). The target aborts early if `VERSION` is missing, malformed, `gh` is not installed, the working copy is dirty, or the tag already exists. Nothing is pushed until every local step has succeeded.
+
+### After the release
+
+- Check the release page : `https://github.com/QuentinDecobert/meridian/releases/latest`
+- Edit the auto-generated notes if useful (context, migration steps). The content users see in the `Release notes ↗` link is whatever is on GitHub — keep it terse.
+- Users running older builds will see the update chip within ~4 hours (next poll cycle) or immediately on their next app launch.
 
 ## Opening an issue
 

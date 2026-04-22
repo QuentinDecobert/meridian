@@ -58,6 +58,21 @@ open Meridian.xcodeproj
 - **Click the icon** — popover with the current 5-hour session, three weekly breakdowns (All models, Sonnet only, Claude design) and a link to Settings
 - **Settings** — launch at login, menu bar display (session / weekly), sign out
 
+## Keeping up to date
+
+Meridian pings GitHub every few hours and tells you when a new release is out.
+
+- **Menu bar** — a small blue dot appears to the right of the text when an update is available
+- **Popover header** — the timestamp is replaced by a `Vx.y.z AVAILABLE` chip. Click it for the version bump and a copyable install command
+- **To update** — run:
+
+  ```bash
+  cd meridian
+  git pull && make install
+  ```
+
+The check is anonymous (no GitHub token), silent on errors, and does nothing when you're already on the latest release. It only triggers on **tagged releases** — untagged `main` commits are ignored.
+
 ## Privacy & security
 
 - Your `claude.ai` session cookie is stored in the **macOS Keychain** under your user, never on disk in plaintext
