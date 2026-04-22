@@ -70,3 +70,52 @@ enum ResetFormatter {
         return formatter.string(from: resetsAt)
     }
 }
+
+/// Elapsed-time formatter for the bonus-wire "last known value is from N min
+/// ago" copy and for the footer's `STALE · N MIN AGO` cue.
+///
+/// Rules :
+///   - `nil` last-refresh date → `"unknown"` (we never pretend a fresh value)
+///   - < 1 min                → `"< 1 min ago"`
+///   - < 60 min               → `"N min ago"`
+///   - ≥ 60 min               → `"Nh Mm ago"` (e.g. `"1h 12m ago"`)
+enum StaleFormatter {
+    static func minutesAgo(_ refreshedAt: Date?, reference: Date = .now) -> String {
+        guard let refreshedAt else { return "unknown" }
+        let seconds = max(0, reference.timeIntervalSince(refreshedAt))
+        if seconds < 60 {
+            return "< 1 min ago"
+        }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 {
+            return "\(minutes) min ago"
+        }
+        let hours = minutes / 60
+        let remMinutes = minutes % 60
+        if remMinutes == 0 {
+            return "\(hours)h ago"
+        }
+        return "\(hours)h \(remMinutes)m ago"
+    }
+
+    /// Compact variant for the `STALE · <value>` footer — uppercase-ready.
+    /// Always returns a non-empty string; when the timestamp is unknown we
+    /// fall back to `"UNKNOWN"` so the footer never renders a bare `STALE ·`.
+    static func compactAgo(_ refreshedAt: Date?, reference: Date = .now) -> String {
+        guard let refreshedAt else { return "UNKNOWN" }
+        let seconds = max(0, reference.timeIntervalSince(refreshedAt))
+        if seconds < 60 {
+            return "JUST NOW"
+        }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 {
+            return "\(minutes) MIN AGO"
+        }
+        let hours = minutes / 60
+        let remMinutes = minutes % 60
+        if remMinutes == 0 {
+            return "\(hours)H AGO"
+        }
+        return "\(hours)H \(remMinutes)M AGO"
+    }
+}

@@ -28,6 +28,15 @@ struct FlightDeckView: View {
     /// footer). `.allClear` / `.unknown` behave as if no status context
     /// were passed.
     var statusContext: StatusContext? = nil
+    /// Optional bonus-wire context. When set, the hero is replaced by a
+    /// placeholder (`—` + "Can't update" + a red banner explaining that
+    /// Anthropic's API is down), the reset/horizon/breakdown rows are
+    /// hidden (no reliable data), the status section still renders, and
+    /// the footer switches to `STALE · N MIN AGO`. Only applied by
+    /// `PopoverView` when BOTH conditions are met: the quota fetch failed
+    /// AND Claude API is in `.majorOutage` — otherwise we fall back to the
+    /// regular error/loaded paths.
+    var bonusWireContext: BonusWireContext? = nil
 
     /// Pulls the live "now" so the header clock and the countdown can update
     /// without spinning up a timer inside the view — the parent is expected
@@ -57,6 +66,15 @@ struct FlightDeckView: View {
         let status: ClaudeStatus
     }
 
+    /// Carrier for the bonus wire (quota fetch blocked by a Claude API
+    /// major outage). The value type keeps the view trivially previewable
+    /// and testable — pass `nil` in the normal path.
+    struct BonusWireContext {
+        /// Last successful quota refresh. `nil` when Meridian never
+        /// managed a successful fetch (the banner then reads "unknown").
+        let lastRefreshedAt: Date?
+    }
+
     /// `true` when `statusContext` resolves to a degraded state deserving a
     /// chip — the header prefers this over the update chip, and the update
     /// chip then gets pushed to the footer.
@@ -79,12 +97,14 @@ struct FlightDeckView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
 
-            if let context = updateContext, context.isShowingDetail, !hasStatusChip {
+            if let context = updateContext, context.isShowingDetail, !hasStatusChip, bonusWireContext == nil {
                 context.panelBuilder()
                     .overlay(alignment: .top) {
                         solidHairline
                             .padding(.top, 2)
                     }
+            } else if bonusWireContext != nil {
+                bonusWireBody
             } else {
                 dashboardBody
             }
@@ -93,8 +113,11 @@ struct FlightDeckView: View {
                 snapshot: snapshot,
                 // Demote the update chip into the footer only when the
                 // status chip is holding the header — otherwise keep the
-                // existing behaviour intact.
-                demotedUpdateContext: hasStatusChip ? updateContext : nil,
+                // existing behaviour intact. In the bonus wire we hide the
+                // update chip entirely: a stale-data warning is the only
+                // thing that belongs in the footer.
+                demotedUpdateContext: (hasStatusChip && bonusWireContext == nil) ? updateContext : nil,
+                staleContext: bonusWireContext.map { .init(lastRefreshedAt: $0.lastRefreshedAt) },
                 onOpenSettings: onOpenSettings
             )
                 .padding(.horizontal, 24)
@@ -171,6 +194,31 @@ struct FlightDeckView: View {
         return (components, incident)
     }
 
+    // MARK: - Bonus wire body (quota fetch blocked by API outage)
+
+    /// Replaces the dashboard body when `bonusWireContext` is set. Keeps the
+    /// status section so the user can still see the component rows and the
+    /// live incident, but drops reset / horizon / breakdown since the
+    /// underlying data is either unknown or stale — surfacing fresh-looking
+    /// values there would contradict the "Can't update" hero.
+    @ViewBuilder
+    private var bonusWireBody: some View {
+        FlightDeckBlockedHero(lastRefreshedAt: bonusWireContext?.lastRefreshedAt)
+            .padding(.horizontal, 24)
+            .padding(.top, 10)
+            .padding(.bottom, 14)
+
+        if let payload = statusSectionPayload {
+            StatusSection(
+                components: payload.components,
+                incident: payload.incident
+            )
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .overlay(alignment: .top) { solidHairline }
+        }
+    }
+
     // MARK: - Ornament hairlines
 
     private var dashedHairline: some View {
@@ -211,6 +259,22 @@ struct FlightDeckView: View {
             Rectangle().fill(baseGradient)
             Rectangle().fill(topRightGlow)
             Rectangle().fill(bottomLeftGlow)
+            if bonusWireContext != nil {
+                // Warm-red overlay at ~8 % so the whole popover picks up a
+                // subtle outage tint without overpowering the underlying
+                // teal-ink gradient. Top-heavy so the banner area reads
+                // first. Kept deliberately cheap — one linear gradient.
+                Rectangle().fill(
+                    LinearGradient(
+                        colors: [
+                            Color(hex: 0xF06459, alpha: 0.08),
+                            Color(hex: 0xF06459, alpha: 0.02),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            }
         }
     }
 
@@ -523,6 +587,120 @@ private struct FlightDeckQuotas: View {
     }
 }
 
+// MARK: - Blocked hero (bonus wire · quota fetch + API outage)
+
+/// Replacement for `FlightDeckHero` when the quota fetch is blocked by an
+/// Anthropic outage. Shows:
+///   - a `Status · unknown` line in red
+///   - a giant `—` placeholder where the percent would normally sit
+///   - a `Can't update` caption in red
+///   - a blocked banner explaining that the API is down + link to the
+///     status page (click on any part of the banner opens it)
+///
+/// The copy is deliberately specific about the correlation ("Meridian can't
+/// refresh your quota until Anthropic's infra is back up") so the user
+/// doesn't blame the app for the missing data.
+private struct FlightDeckBlockedHero: View {
+    /// Optional last-successful-refresh timestamp — drives the "N min ago"
+    /// phrase. `nil` yields "unknown" (we never fabricate a value).
+    let lastRefreshedAt: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                StatusGlyph(status: .critical, size: 11, color: MeridianColors.red)
+                Text("Status · unknown")
+                    .font(FlightDeckType.caps10)
+                    .tracking(2.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(MeridianColors.red)
+            }
+            .padding(.bottom, 16)
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("—")
+                    .font(FlightDeckType.hero)
+                    .foregroundStyle(MeridianColors.ink4)
+            }
+
+            Text("Can't update")
+                .font(FlightDeckType.caps11)
+                .tracking(2.4)
+                .textCase(.uppercase)
+                .foregroundStyle(MeridianColors.red)
+                .padding(.top, -6)
+
+            BlockedBanner(lastRefreshedAt: lastRefreshedAt)
+                .padding(.top, 12)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Quota refresh blocked: Claude API is down")
+        .accessibilityValue(
+            "Last known value is from \(StaleFormatter.minutesAgo(lastRefreshedAt))"
+        )
+    }
+}
+
+/// The red `.blocked` banner — matches `designs/api-status-indicator.html`
+/// `.pop-hero .blocked`. Clicking anywhere on the card opens status.claude.com.
+private struct BlockedBanner: View {
+    let lastRefreshedAt: Date?
+
+    @State private var isHoveringLink: Bool = false
+
+    private static let statusPageURL = URL(string: "https://status.claude.com")!
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // `Text(...).foregroundStyle(_:)` is macOS 14+; the deployment
+            // target is 13, so we use `.foregroundColor(_:)` which covers
+            // every supported OS. The outer `.foregroundStyle(...)` sets
+            // the default (ivory-tinted red) for the body copy.
+            (
+                Text("Claude API is down. ")
+                    .foregroundColor(MeridianColors.red)
+                    .fontWeight(.medium)
+                +
+                Text("Meridian can't refresh your quota until Anthropic's infra is back up. The last known value is from ")
+                +
+                Text(StaleFormatter.minutesAgo(lastRefreshedAt))
+                    .fontWeight(.medium)
+                    .foregroundColor(Color(hex: 0xF6CFC8))
+                +
+                Text(".")
+            )
+            .font(.system(size: 12))
+            .foregroundStyle(Color(hex: 0xF6CFC8))
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: { NSWorkspace.shared.open(Self.statusPageURL) }) {
+                Text("status.claude.com ↗")
+                    .font(.system(size: 12))
+                    .underline()
+                    .foregroundStyle(isHoveringLink ? MeridianColors.ink : MeridianColors.ink2)
+            }
+            .buttonStyle(.plain)
+            .onHover { isHoveringLink = $0 }
+            .accessibilityLabel("Open status.claude.com")
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(MeridianColors.redBG)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(MeridianColors.redLine, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onTapGesture {
+            NSWorkspace.shared.open(Self.statusPageURL)
+        }
+    }
+}
+
 // MARK: - Footer
 
 private struct FlightDeckFooter: View {
@@ -533,11 +711,33 @@ private struct FlightDeckFooter: View {
     /// update chip AND the idle/stale label at the same time — the proto
     /// exchanges one for the other.
     var demotedUpdateContext: FlightDeckView.UpdateContext?
+    /// When set, the footer's left slot renders `STALE · N MIN AGO` in the
+    /// ink-3 tone. Used by the bonus wire to make it painfully clear that
+    /// the data on screen is not fresh. Wins priority over the update chip
+    /// and over the LIVE/IDLE label.
+    var staleContext: StaleContext?
     var onOpenSettings: () -> Void
+
+    /// Narrow value type local to the footer — the only reason it lives here
+    /// rather than at `FlightDeckView` level is so we can keep the stale
+    /// payload next to the rendering logic.
+    struct StaleContext {
+        let lastRefreshedAt: Date?
+    }
 
     var body: some View {
         HStack {
-            if let context = demotedUpdateContext {
+            if let context = staleContext {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(MeridianColors.ink3)
+                        .frame(width: 5, height: 5)
+                    Text("STALE · \(StaleFormatter.compactAgo(context.lastRefreshedAt))")
+                        .font(FlightDeckType.caps10)
+                        .tracking(2.0)
+                        .foregroundStyle(MeridianColors.ink3)
+                }
+            } else if let context = demotedUpdateContext {
                 UpdateChip(
                     title: context.chipTitle,
                     isActive: context.isShowingDetail,
@@ -661,6 +861,28 @@ private struct FlightDeckFooter: View {
             ],
             incident: nil
         ))
+    )
+    .padding(24)
+    .background(Color.black)
+}
+
+#Preview("Flight Deck · API outage + quota blocked (bonus wire)") {
+    let now = Date()
+    return FlightDeckView(
+        snapshot: .mockSerene,
+        statusContext: .init(status: .degraded(
+            components: [
+                ComponentState(id: ClaudeStatusComponents.claudeAPIID, name: "Claude API", status: .majorOutage),
+                ComponentState(id: ClaudeStatusComponents.claudeCodeID, name: "Claude Code", status: .degradedPerformance),
+            ],
+            incident: Incident(
+                name: "Widespread connectivity issues on Claude API",
+                status: "identified",
+                createdAt: now.addingTimeInterval(-22 * 60),
+                updatedAt: now
+            )
+        )),
+        bonusWireContext: .init(lastRefreshedAt: now.addingTimeInterval(-27 * 60))
     )
     .padding(24)
     .background(Color.black)

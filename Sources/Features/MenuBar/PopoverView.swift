@@ -48,11 +48,7 @@ struct PopoverView: View {
             ) {
                 FlightDeckView(
                     snapshot: snapshot,
-                    onOpenSettings: {
-                        popoverLogger.info("Preferences opened from popover")
-                        NSApp.activate(ignoringOtherApps: true)
-                        openWindow(id: "settings")
-                    },
+                    onOpenSettings: openSettings,
                     updateContext: updateContext,
                     statusContext: statusContext
                 )
@@ -60,10 +56,59 @@ struct PopoverView: View {
                 loadingShell
             }
         case .error(let message):
-            errorShell(message: message)
+            // Bonus wire : when the quota fetch is failing AND the status
+            // feed says Claude API is in a major outage, we trade the
+            // generic error shell for a FlightDeckView that spells out the
+            // correlation. This preserves the header chip / status section
+            // the user already trusts and makes it obvious that the
+            // missing data is not Meridian's fault.
+            if statusChecker.status.isClaudeAPIMajorOutage {
+                FlightDeckView(
+                    snapshot: blockedSnapshot,
+                    onOpenSettings: openSettings,
+                    statusContext: statusContext,
+                    bonusWireContext: .init(
+                        lastRefreshedAt: quotaStore.lastSuccessfulRefreshAt
+                    )
+                )
+            } else {
+                errorShell(message: message)
+            }
         case .signedOut:
             signedOutShell
         }
+    }
+
+    /// Shared `onOpenSettings` closure used by both the normal and the
+    /// bonus-wire Flight Deck branches. Centralising it avoids repeating
+    /// the NSApp activation + openWindow dance twice.
+    private func openSettings() {
+        popoverLogger.info("Preferences opened from popover")
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "settings")
+    }
+
+    /// Placeholder snapshot used as the carrier for the bonus-wire branch.
+    /// The bonus-wire dashboard body never reads the quota / session fields
+    /// (hero / reset / horizon / breakdown are all hidden) — we still need
+    /// a value because the footer and header pull `capturedAt` and
+    /// `heroStatus` from it. `.unused` keeps the header pip quiet (no
+    /// amber / red pulse competing with the red chip).
+    private var blockedSnapshot: FlightDeckSnapshot {
+        let zeroWindow = SessionWindow(
+            startedAt: .now,
+            resetsAt: .now,
+            percent: 0
+        )
+        return FlightDeckSnapshot(
+            allModels:    QuotaBreakdown(name: "All models",  used: 0, total: 1, percent: 0),
+            sonnet:       QuotaBreakdown(name: "Sonnet only", used: 0, total: 1, percent: 0),
+            claudeDesign: QuotaBreakdown(name: "Claude design", used: 0, total: 1, percent: 0),
+            session: zeroWindow,
+            planLabel: "PLAN MAX",
+            isLive: false,
+            capturedAt: .now
+        )
     }
 
     // MARK: - Update wiring
