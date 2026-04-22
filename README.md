@@ -5,9 +5,31 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 
-A peripheral cockpit for builders working with Claude.
+**A peripheral cockpit for builders working with Claude.**
 
-Meridian is a macOS menu bar app that displays your `claude.ai` quota in real time — percent used, time until reset, weekly limits — without breaking your flow.
+Meridian lives in your macOS menu bar. At a glance : how much Claude you've consumed (subscription quota *or* API dollars — or both), when it resets, and whether Anthropic itself is operating normally. One popover, four signals, zero context switch.
+
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="Meridian in the macOS menu bar · 75 % used, CLIMB status" width="440" />
+</p>
+
+**What it surfaces**
+
+- **Claude subscription quota** — percent used, time until reset, per-bucket weekly limits (All models / Sonnet only / Claude Design). For Pro and Max plans.
+- **Anthropic API spend** — month-to-date dollars and a per-model breakdown, from the official Admin API. Opt-in via an Admin Key.
+- **Claude infrastructure status** — live feed from `status.claude.com`. A chip in the popover header when the API or Claude Code is degraded ; a red pip in the menu bar on major outages.
+- **App updates** — pings GitHub for new tagged releases and shows a discreet chip. Never nags, never pops a window.
+
+<p align="center">
+  <img src="docs/screenshots/coexistence.png" alt="Subscription and API usage side by side" width="240" />
+  <img src="docs/screenshots/api-details.png" alt="Expanded API Flight Deck with per-model breakdown" width="240" />
+  <img src="docs/screenshots/status.png" alt="Claude status chip and section" width="240" />
+</p>
+<p align="center">
+  <sub>Subscription + API in one popover · per-model API breakdown · Claude infrastructure status</sub>
+</p>
+
+Native macOS, Swift 6. Session cookies and API keys in the Keychain. Zero telemetry. Zero tracking. Source is fully public.
 
 ---
 
