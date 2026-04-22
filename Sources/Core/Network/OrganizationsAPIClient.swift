@@ -5,8 +5,6 @@ protocol OrganizationsFetching: Sendable {
 }
 
 struct OrganizationsAPIClient: OrganizationsFetching {
-    static let endpoint = URL(string: "https://claude.ai/api/organizations")!
-
     let apiClient: any APIClient
 
     init(apiClient: any APIClient = URLSessionAPIClient()) {
@@ -14,7 +12,7 @@ struct OrganizationsAPIClient: OrganizationsFetching {
     }
 
     func fetchOrganizations(cookie: SessionCookie) async throws -> [Organization] {
-        try await apiClient.get(Self.endpoint, cookie: cookie)
+        try await apiClient.get(ClaudeAIEndpoints.organizations, cookie: cookie)
     }
 }
 

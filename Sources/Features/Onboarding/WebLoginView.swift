@@ -7,7 +7,7 @@ private let logger = Logger(subsystem: "com.quentindecobert.meridian", category:
 struct WebLoginView: NSViewRepresentable {
     let onCookieCaptured: @MainActor (SessionCookie) -> Void
 
-    static let loginURL = URL(string: "https://claude.ai/login")!
+    static let loginURL = ClaudeAIEndpoints.login
 
     /// Host must be exactly `claude.ai` or a strict subdomain thereof.
     /// `hasSuffix("claude.ai")` alone would match `evil-claude.ai` — this

@@ -5,8 +5,6 @@ protocol UsageFetching: Sendable {
 }
 
 struct UsageAPIClient: UsageFetching {
-    static let baseURL = URL(string: "https://claude.ai")!
-
     let apiClient: any APIClient
 
     init(apiClient: any APIClient = URLSessionAPIClient()) {
@@ -19,17 +17,14 @@ struct UsageAPIClient: UsageFetching {
         // entry could yield a malformed URL (crash on the previous
         // force-unwrap) or, worse in theory, inject `..` / `?` / `#` into
         // the path and redirect the request elsewhere on `claude.ai`. The
-        // raw-`URL.appending(path:)` variant already percent-encodes path
+        // `URL.appending(path:)` variant already percent-encodes path
         // components, but we fail loudly on anything that doesn't look
         // like a UUID so the user sees a clean `.invalidResponse` instead
         // of a surprising 404.
         guard Self.isValidUUID(organizationUUID) else {
             throw APIError.invalidResponse
         }
-        let url = Self.baseURL
-            .appending(path: "api/organizations")
-            .appending(path: organizationUUID)
-            .appending(path: "usage")
+        let url = ClaudeAIEndpoints.usage(organizationUUID: organizationUUID)
         return try await apiClient.get(url, cookie: cookie)
     }
 
