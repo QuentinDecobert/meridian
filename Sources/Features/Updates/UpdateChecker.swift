@@ -114,9 +114,13 @@ final class UpdateChecker: ObservableObject {
         //   ahead == 0, behind > 0 → local is strictly ahead of the release → up to date
         //   both > 0               → diverged (maintainer rewrote history)  → up to date (nothing actionable)
         //   both == 0              → SHAs equivalent                        → up to date
-        // If the compare call itself fails we fall back to "update available"
-        // with an unknown ahead count, matching the previous behaviour for
-        // unreachable SHAs (force push on main).
+        // If the compare call itself fails (404 on an unreachable SHA, rate
+        // limit, transport error) the topology is unknown. We CANNOT assert
+        // that the user is behind — this happens for local dev builds whose
+        // commit isn't pushed, orphaned branches after a force-push, or
+        // otherwise unreachable SHAs. Surfacing "update available" in those
+        // cases is a false positive that pollutes the UX, so we stay silent
+        // (`.upToDate`).
         let counts: CompareCounts?
         do {
             counts = try await client.fetchCompareCounts(
@@ -143,13 +147,10 @@ final class UpdateChecker: ObservableObject {
             return
         }
 
-        // Compare failed. SHAs differ, topology unknown — report the update
-        // with ahead == 0 rather than swallow the signal entirely.
-        status = .available(
-            remoteSHA: release.commitSHA,
-            ahead: 0,
-            remoteVersion: remoteVersion
-        )
+        // Compare failed and topology is unknown — see the comment above.
+        // Without a confirmed "ahead > 0, behind == 0" relation, the safe
+        // answer is `.upToDate`, not `.available`.
+        status = .upToDate
     }
 
     // MARK: - Info.plist helper

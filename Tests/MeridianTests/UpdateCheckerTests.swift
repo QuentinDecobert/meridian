@@ -102,11 +102,13 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(checker.status, .upToDate)
     }
 
-    func testAvailableWhenCompareFailsStillReportsUpdateWithZeroAhead() async {
-        // If `/releases/latest` succeeds but `/compare` 404s (force push,
-        // unreachable base), topology is unknown. Fall back to "update
-        // available" with ahead == 0 — we can't count commits, but we know
-        // the SHAs differ and the other branches are all benign.
+    func testCompareFailureResolvesToUpToDate() async {
+        // If `/releases/latest` succeeds but `/compare` 404s (local dev build
+        // from an unpushed commit, orphaned branch after a force-push,
+        // unreachable base SHA), topology is unknown. We CANNOT prove the
+        // user is behind — so we stay silent rather than surface a
+        // false-positive "update available" chip. The compare failure must
+        // resolve to `.upToDate`.
         let stub = StubGitHub(
             release: .success(LatestRelease(tagName: "v0.2.0", commitSHA: "newSHA")),
             compare: .failure(GitHubUpdateError.notFound)
@@ -118,10 +120,7 @@ final class UpdateCheckerTests: XCTestCase {
             initialDelay: 0
         )
         await checker.checkOnce()
-        XCTAssertEqual(
-            checker.status,
-            .available(remoteSHA: "newSHA", ahead: 0, remoteVersion: "0.2.0")
-        )
+        XCTAssertEqual(checker.status, .upToDate)
     }
 
     func testReleaseFetchFailureKeepsStatusUnchanged() async {
