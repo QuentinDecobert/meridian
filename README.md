@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="docs/brand/meridian-mark.png" alt="Meridian" width="120" />
-</p>
-
-<h1 align="center">Meridian</h1>
+# Meridian
 
 [![CI](https://github.com/QuentinDecobert/meridian/actions/workflows/ci.yml/badge.svg)](https://github.com/QuentinDecobert/meridian/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
