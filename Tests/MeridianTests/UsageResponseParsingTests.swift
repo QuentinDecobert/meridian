@@ -44,6 +44,36 @@ final class UsageResponseParsingTests: XCTestCase {
         XCTAssertEqual(response.sevenDayOmelette?.utilization, 100.0)
     }
 
+    func testPartialWindowFallsBackToNilInsteadOfFailingWholeResponse() throws {
+        // After periods of inactivity, claude.ai has been observed serving
+        // windows that are present but missing fields (e.g. `utilization`
+        // alone with no `resets_at`). Before the per-window tolerance, this
+        // collapsed the whole decode into a generic "Unexpected format"
+        // popover. Now the broken window is dropped to nil and the healthy
+        // ones still surface.
+        let json = """
+        {
+            "five_hour": {
+                "utilization": 60.0,
+                "resets_at": "2026-04-20T14:00:00.656479+00:00"
+            },
+            "seven_day": { "utilization": 22.0 },
+            "seven_day_sonnet": null,
+            "seven_day_omelette": {
+                "utilization": 100.0,
+                "resets_at": "2026-04-25T09:00:00.656527+00:00"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder.claudeAI.decode(UsageResponse.self, from: json)
+
+        XCTAssertEqual(response.fiveHour?.utilization, 60.0)
+        XCTAssertNil(response.sevenDay, "partial window without resets_at should drop to nil")
+        XCTAssertNil(response.sevenDaySonnet)
+        XCTAssertEqual(response.sevenDayOmelette?.utilization, 100.0)
+    }
+
     func testNullWindowsAreOptional() throws {
         let json = """
         {

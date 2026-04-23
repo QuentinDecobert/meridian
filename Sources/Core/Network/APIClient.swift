@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let networkLogger = Logger(subsystem: "com.quentindecobert.meridian", category: "network")
 
 protocol APIClient: Sendable {
     func get<T: Decodable & Sendable>(_ url: URL, cookie: SessionCookie) async throws -> T
@@ -104,6 +107,11 @@ struct URLSessionAPIClient: APIClient {
                 if looksUnauthenticated(data: data) {
                     throw APIError.unauthenticated
                 }
+                // Surface the decoding error structurally so we can diagnose
+                // schema drift without leaking values. `DecodingError`'s own
+                // description includes the coding path and the mismatch type
+                // but NO raw JSON content — safe to ship at `.public`.
+                networkLogger.debug("decode failed for \(String(describing: T.self), privacy: .public): \(String(describing: error), privacy: .public)")
                 throw APIError.decoding(error)
             }
         case 401, 403:
