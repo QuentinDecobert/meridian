@@ -50,6 +50,20 @@ struct FlightDeckView: View {
     /// to flip the snapshot whenever the view should re-render.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Drives the staged-reveal cascade played on popover open (see
+    /// `PopoverRevealStage`). Starts `false` so `@State` default matches the
+    /// "before reveal" visual (opacity 0, offset 6 pt where applicable). The
+    /// first `.onAppear` flips it to `true`, which lets each stage's own
+    /// `.animation(_:value:)` fire with the prescribed delay + duration.
+    ///
+    /// We deliberately re-arm on every `.onAppear`: `MenuBarExtra(.window)`
+    /// keeps the view hierarchy alive across open/close cycles, so `@State`
+    /// would otherwise keep `true` after the first open and skip the
+    /// cascade on every subsequent open. Resetting to `false` and flipping
+    /// back to `true` inside a `Task` guarantees the cascade replays every
+    /// time.
+    @State private var isRevealed: Bool = false
+
     /// Carrier for the chip + panel swap. Kept as a value type inside the
     /// view so tests and previews can opt out entirely (the default `nil`
     /// path yields the original dashboard-only layout).
@@ -146,6 +160,7 @@ struct FlightDeckView: View {
                 .padding(.top, 18)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
+                .stagedReveal(.header, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
             if isShowingAPIDetail, let snapshot = apiContext?.snapshot {
                 APIUsagePanel(
@@ -184,6 +199,7 @@ struct FlightDeckView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 18)
                 .overlay(alignment: .top) { solidHairline }
+                .stagedReveal(.footer, isRevealed: isRevealed, reduceMotion: reduceMotion)
         }
         .frame(width: 360)
         .background(backgroundLayers)
@@ -199,17 +215,50 @@ struct FlightDeckView: View {
         .shadow(color: .black.opacity(0.45), radius: 30, x: 0, y: 14)
         .animation(.easeInOut(duration: 0.35), value: snapshot.heroStatus)
         .accessibilityElement(children: .contain)
+        // Drive the staged-reveal cascade on every popover open.
+        //
+        // `MenuBarExtra(.window)` reuses the view hierarchy across open /
+        // close cycles, so `@State` would otherwise stay `true` and the
+        // cascade would never replay. We therefore reset to `false` on
+        // every `onAppear`, wrapped in a `Transaction` with animations
+        // disabled so the reset itself doesn't play backwards (which would
+        // briefly flash every stage to opacity 0 + offset 6). Then, after
+        // one runloop turn, we flip back to `true` and the per-stage
+        // `.animation(_:value:)` modifiers pick up the change.
+        //
+        // When `reduceMotion` is on we still toggle `isRevealed`, but the
+        // `StagedRevealModifier` short-circuits and never applies opacity /
+        // offset / scale — the popover just snaps in.
+        .onAppear {
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) {
+                isRevealed = false
+            }
+            Task { @MainActor in
+                // One runloop turn is enough; `Task.yield()` lets SwiftUI
+                // commit the pre-reveal frame before the cascade starts.
+                await Task.yield()
+                isRevealed = true
+            }
+        }
     }
 
     // MARK: - Dashboard body (hero / reset / horizon / breakdown)
 
     /// The five dashboard rows — extracted so the update panel can replace
     /// them cleanly while the header + footer stay put.
+    ///
+    /// Each sub-section plugs into the staged-reveal cascade via
+    /// `.stagedReveal(...)`. The breakdown rows + label are handled inside
+    /// `FlightDeckQuotas` since the three rows need individual staggering
+    /// (0.25s / 0.28s / 0.31s).
     @ViewBuilder
     private var dashboardBody: some View {
         FlightDeckHero(snapshot: snapshot)
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
+            .stagedReveal(.hero, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
         FlightDeckResetLine(snapshot: snapshot)
             .padding(.horizontal, 24)
@@ -219,13 +268,23 @@ struct FlightDeckView: View {
                 dashedHairline
                     .padding(.top, 2)
             }
+            .stagedReveal(.reset, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
         HorizonView(snapshot: snapshot)
             .padding(.horizontal, 24)
             .padding(.top, 4)
             .padding(.bottom, 14)
+            // Horizon rides the reset timing — the proto doesn't call it
+            // out separately (it's visually part of the same band) and
+            // bundling them keeps the cascade feeling tight rather than
+            // dragging out an extra row.
+            .stagedReveal(.reset, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
-        FlightDeckQuotas(snapshot: snapshot)
+        FlightDeckQuotas(
+            snapshot: snapshot,
+            isRevealed: isRevealed,
+            reduceMotion: reduceMotion
+        )
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
             .overlay(alignment: .top) { solidHairline }
@@ -242,6 +301,7 @@ struct FlightDeckView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 14)
                 .overlay(alignment: .top) { solidHairline }
+                .stagedReveal(.statusSection, isRevealed: isRevealed, reduceMotion: reduceMotion)
         }
 
         // Compact API mini-section (proposition A, collapsed state).
@@ -252,6 +312,7 @@ struct FlightDeckView: View {
                 snapshot: snapshot,
                 onTap: apiContext.onToggleDetail
             )
+                .stagedReveal(.apiSection, isRevealed: isRevealed, reduceMotion: reduceMotion)
         }
     }
 
@@ -277,6 +338,7 @@ struct FlightDeckView: View {
             .padding(.horizontal, 24)
             .padding(.top, 10)
             .padding(.bottom, 14)
+            .stagedReveal(.hero, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
         if let payload = statusSectionPayload {
             StatusSection(
@@ -286,6 +348,7 @@ struct FlightDeckView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 14)
                 .overlay(alignment: .top) { solidHairline }
+                .stagedReveal(.statusSection, isRevealed: isRevealed, reduceMotion: reduceMotion)
         }
     }
 
@@ -686,6 +749,12 @@ private struct FlightDeckResetLine: View {
 
 private struct FlightDeckQuotas: View {
     let snapshot: FlightDeckSnapshot
+    /// Drives the staged-reveal cascade for the label + three rows. Flipped
+    /// from `false` to `true` by the parent on popover open.
+    var isRevealed: Bool = true
+    /// Bypass flag for Reduce Motion. When `true`, every row snaps to its
+    /// final state with no animation — per macOS accessibility guidance.
+    var reduceMotion: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -694,10 +763,14 @@ private struct FlightDeckQuotas: View {
                 .tracking(2.2)
                 .foregroundStyle(MeridianColors.ink3)
                 .padding(.bottom, 1)
+                .stagedReveal(.breakdownLabel, isRevealed: isRevealed, reduceMotion: reduceMotion)
 
             QuotaRowView(row: snapshot.allModels,    isUnusedContext: snapshot.heroStatus == .unused)
+                .stagedReveal(.breakdownRow1, isRevealed: isRevealed, reduceMotion: reduceMotion)
             QuotaRowView(row: snapshot.sonnet,       isUnusedContext: snapshot.heroStatus == .unused)
+                .stagedReveal(.breakdownRow2, isRevealed: isRevealed, reduceMotion: reduceMotion)
             QuotaRowView(row: snapshot.claudeDesign, isUnusedContext: snapshot.heroStatus == .unused)
+                .stagedReveal(.breakdownRow3, isRevealed: isRevealed, reduceMotion: reduceMotion)
         }
     }
 }
