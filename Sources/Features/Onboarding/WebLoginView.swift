@@ -17,6 +17,13 @@ struct WebLoginView: NSViewRepresentable {
         return host == "claude.ai" || host.hasSuffix(".claude.ai")
     }
 
+    /// hCaptcha iframes embedded by the claude.ai login page. Same strict
+    /// suffix match as `isClaudeAIHost`. Only honoured for subframes.
+    nonisolated static func isHCaptchaHost(_ host: String?) -> Bool {
+        guard let host else { return false }
+        return host == "hcaptcha.com" || host.hasSuffix(".hcaptcha.com")
+    }
+
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         // Use an ephemeral data store so cookies, cache, localStorage and
@@ -154,6 +161,15 @@ extension WebLoginView.Coordinator {
                 return
             }
             if WebLoginView.isClaudeAIHost(url?.host) {
+                decisionHandler(.allow)
+                return
+            }
+            // claude.ai's login page runs an hCaptcha check in iframes served
+            // from `*.hcaptcha.com`. Cancelling them makes the page fail with
+            // "unable to verify your browser". Allow them for subframes only —
+            // the main frame stays pinned to claude.ai.
+            let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+            if !isMainFrame, WebLoginView.isHCaptchaHost(url?.host) {
                 decisionHandler(.allow)
                 return
             }

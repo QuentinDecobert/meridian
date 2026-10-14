@@ -31,4 +31,18 @@ final class WebLoginAllowlistTests: XCTestCase {
         XCTAssertFalse(WebLoginView.isClaudeAIHost(nil))
         XCTAssertFalse(WebLoginView.isClaudeAIHost(""))
     }
+
+    // MARK: - hCaptcha subframes
+
+    func testHCaptchaHostsAreAllowed() {
+        XCTAssertTrue(WebLoginView.isHCaptchaHost("hcaptcha.com"))
+        XCTAssertTrue(WebLoginView.isHCaptchaHost("newassets.hcaptcha.com"))
+    }
+
+    func testHCaptchaLookalikesAreRejected() {
+        XCTAssertFalse(WebLoginView.isHCaptchaHost("evil-hcaptcha.com"))
+        XCTAssertFalse(WebLoginView.isHCaptchaHost("hcaptcha.com.attacker.com"))
+        XCTAssertFalse(WebLoginView.isHCaptchaHost("claude.ai"))
+        XCTAssertFalse(WebLoginView.isHCaptchaHost(nil))
+    }
 }
